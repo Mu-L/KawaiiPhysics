@@ -7,7 +7,7 @@
 
 namespace
 {
-	constexpr float GTol = 0.001f;
+	constexpr float GSharedCollisionSlotTol = 0.001f;
 
 	FSphericalLimit MakeSphere(float Base)
 	{
@@ -83,17 +83,17 @@ bool FKawaiiPhysicsSharedCollisionSourceSlotTest::RunTest(const FString& Paramet
 		TestTrue(TEXT("Published data appends one box"), OutData.BoxLimits.Num() == 1);
 		TestTrue(TEXT("Published data appends one plane"), OutData.PlanarLimits.Num() == 1);
 		TestTrue(TEXT("Sphere location is preserved"),
-		         OutData.SphericalLimits[0].Location.Equals(FVector(10.0f, 11.0f, 12.0f), GTol));
+		         OutData.SphericalLimits[0].Location.Equals(FVector(10.0f, 11.0f, 12.0f), GSharedCollisionSlotTol));
 		TestTrue(TEXT("Sphere radius is preserved"),
-		         FMath::IsNearlyEqual(OutData.SphericalLimits[0].Radius, 13.0f, GTol));
+		         FMath::IsNearlyEqual(OutData.SphericalLimits[0].Radius, 13.0f, GSharedCollisionSlotTol));
 		TestTrue(TEXT("Capsule location is preserved"),
-		         OutData.CapsuleLimits[0].Location.Equals(FVector(20.0f, 21.0f, 22.0f), GTol));
+		         OutData.CapsuleLimits[0].Location.Equals(FVector(20.0f, 21.0f, 22.0f), GSharedCollisionSlotTol));
 		TestTrue(TEXT("Capsule radius is preserved"),
-		         FMath::IsNearlyEqual(OutData.CapsuleLimits[0].Radius, 23.0f, GTol));
+		         FMath::IsNearlyEqual(OutData.CapsuleLimits[0].Radius, 23.0f, GSharedCollisionSlotTol));
 		TestTrue(TEXT("Box extent is preserved"),
-		         OutData.BoxLimits[0].Extent.Equals(FVector(33.0f, 34.0f, 35.0f), GTol));
+		         OutData.BoxLimits[0].Extent.Equals(FVector(33.0f, 34.0f, 35.0f), GSharedCollisionSlotTol));
 		TestTrue(TEXT("Planar limit is preserved"),
-		         FMath::IsNearlyEqual(OutData.PlanarLimits[0].Plane.W, 43.0f, GTol));
+		         FMath::IsNearlyEqual(OutData.PlanarLimits[0].Plane.W, 43.0f, GSharedCollisionSlotTol));
 	}
 
 	{
@@ -109,9 +109,9 @@ bool FKawaiiPhysicsSharedCollisionSourceSlotTest::RunTest(const FString& Paramet
 		TestTrue(TEXT("Second publish removes old box data"), OutData.BoxLimits.Num() == 0);
 		TestTrue(TEXT("Second publish removes old planar data"), OutData.PlanarLimits.Num() == 0);
 		TestTrue(TEXT("Second publish first sphere radius"),
-		         FMath::IsNearlyEqual(OutData.SphericalLimits[0].Radius, 53.0f, GTol));
+		         FMath::IsNearlyEqual(OutData.SphericalLimits[0].Radius, 53.0f, GSharedCollisionSlotTol));
 		TestTrue(TEXT("Second publish second sphere radius"),
-		         FMath::IsNearlyEqual(OutData.SphericalLimits[1].Radius, 63.0f, GTol));
+		         FMath::IsNearlyEqual(OutData.SphericalLimits[1].Radius, 63.0f, GSharedCollisionSlotTol));
 	}
 
 	{
@@ -124,8 +124,8 @@ bool FKawaiiPhysicsSharedCollisionSourceSlotTest::RunTest(const FString& Paramet
 
 		TestTrue(TEXT("AppendTo does not reset output data"), OutData.SphericalLimits.Num() == 2);
 		TestTrue(TEXT("AppendTo preserves appended values"),
-		         FMath::IsNearlyEqual(OutData.SphericalLimits[0].Radius, 103.0f, GTol)
-		         && FMath::IsNearlyEqual(OutData.SphericalLimits[1].Radius, 103.0f, GTol));
+		         FMath::IsNearlyEqual(OutData.SphericalLimits[0].Radius, 103.0f, GSharedCollisionSlotTol)
+		         && FMath::IsNearlyEqual(OutData.SphericalLimits[1].Radius, 103.0f, GSharedCollisionSlotTol));
 	}
 
 	{

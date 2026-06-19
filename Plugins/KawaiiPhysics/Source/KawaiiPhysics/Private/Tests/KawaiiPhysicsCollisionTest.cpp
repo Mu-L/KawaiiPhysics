@@ -24,7 +24,7 @@ namespace
 		return Bone;
 	}
 
-	constexpr float GTol = 0.01f; // 0.1mm スケール / sub-millimeter tolerance
+	constexpr float GCollisionTol = 0.01f; // 0.1mm スケール / sub-millimeter tolerance
 }
 
 // ---------------------------------------------------------------------------
@@ -54,13 +54,13 @@ bool FKawaiiPhysicsSphereOuterTest::RunTest(const FString& Parameters)
 	const FVector Expected(13, 0, 0);
 	TestTrue(FString::Printf(TEXT("Sphere push-out: got %s expected %s"),
 	                         *Bone.Location.ToString(), *Expected.ToString()),
-	         Bone.Location.Equals(Expected, GTol));
+	         Bone.Location.Equals(Expected, GCollisionTol));
 
 	// 表面の外側にあるボーンは動かさない / a bone already outside must not move.
 	FKawaiiPhysicsModifyBone Outside = MakeBone(FVector(20, 0, 0), 3.0f, FVector(20, 0, 0));
 	A.CallSphereCollision(Outside, Limits);
 	TestTrue(TEXT("Sphere: bone outside is untouched"),
-	         Outside.Location.Equals(FVector(20, 0, 0), GTol));
+	         Outside.Location.Equals(FVector(20, 0, 0), GCollisionTol));
 
 	// Inner タイプ: 内側に閉じ込める。inner limit = max(R - boneR, 0) = 7。距離 10 は外なので 7 へ引き戻し。
 	FKawaiiPhysicsModifyBone Inner = MakeBone(FVector(10, 0, 0), 3.0f, FVector(10, 0, 0));
@@ -73,7 +73,7 @@ bool FKawaiiPhysicsSphereOuterTest::RunTest(const FString& Parameters)
 	InnerLimits.Add(InnerSphere);
 	A.CallSphereCollision(Inner, InnerLimits);
 	TestTrue(FString::Printf(TEXT("Sphere inner pull-in: got %s expected (7,0,0)"), *Inner.Location.ToString()),
-	         Inner.Location.Equals(FVector(7, 0, 0), GTol));
+	         Inner.Location.Equals(FVector(7, 0, 0), GCollisionTol));
 
 	return true;
 }
@@ -107,7 +107,7 @@ bool FKawaiiPhysicsCapsuleTest::RunTest(const FString& Parameters)
 	const FVector Expected(7, 0, 0);
 	TestTrue(FString::Printf(TEXT("Capsule push-out: got %s expected %s"),
 	                         *Bone.Location.ToString(), *Expected.ToString()),
-	         Bone.Location.Equals(Expected, GTol));
+	         Bone.Location.Equals(Expected, GCollisionTol));
 
 	return true;
 }
@@ -140,7 +140,7 @@ bool FKawaiiPhysicsBoxTest::RunTest(const FString& Parameters)
 	const FVector Expected(13, 0, 0);
 	TestTrue(FString::Printf(TEXT("Box push-out: got %s expected %s"),
 	                         *Bone.Location.ToString(), *Expected.ToString()),
-	         Bone.Location.Equals(Expected, GTol));
+	         Bone.Location.Equals(Expected, GCollisionTol));
 
 	// 完全に内部（buried）ケース。注: 現行アルゴリズムは中心方向へ「半径ぶん」だけ押すため箱から出きらず、
 	// (5,0,0)+(1,0,0)*3 = (8,0,0) で止まる（理想の押し出し (13,0,0) ではない）。現挙動の固定＝リグレッション検出用。
@@ -150,7 +150,7 @@ bool FKawaiiPhysicsBoxTest::RunTest(const FString& Parameters)
 	A.CallBoxCollision(Buried, Limits);
 	TestTrue(FString::Printf(TEXT("Box buried push (pins current behavior): got %s expected (8,0,0)"),
 	                         *Buried.Location.ToString()),
-	         Buried.Location.Equals(FVector(8, 0, 0), GTol));
+	         Buried.Location.Equals(FVector(8, 0, 0), GCollisionTol));
 
 	return true;
 }
@@ -183,7 +183,7 @@ bool FKawaiiPhysicsPlanarTest::RunTest(const FString& Parameters)
 	const FVector Expected(0, 0, 3);
 	TestTrue(FString::Printf(TEXT("Planar push-out: got %s expected %s"),
 	                         *Bone.Location.ToString(), *Expected.ToString()),
-	         Bone.Location.Equals(Expected, GTol));
+	         Bone.Location.Equals(Expected, GCollisionTol));
 
 	return true;
 }
@@ -216,11 +216,11 @@ bool FKawaiiPhysicsAngleLimitTest::RunTest(const FString& Parameters)
 	                       10.0f * FMath::Sin(FMath::DegreesToRadians(30.0f)), 0.0f);
 	TestTrue(FString::Printf(TEXT("Angle limit: got %s expected %s"),
 	                         *Child.Location.ToString(), *Expected.ToString()),
-	         Child.Location.Equals(Expected, GTol));
+	         Child.Location.Equals(Expected, GCollisionTol));
 
 	// 距離（ボーン長）が保存されること / bone length preserved.
 	TestTrue(TEXT("Angle limit preserves bone length"),
-	         FMath::IsNearlyEqual(static_cast<float>((Child.Location - Parent.Location).Size()), 10.0f, GTol));
+	         FMath::IsNearlyEqual(static_cast<float>((Child.Location - Parent.Location).Size()), 10.0f, GCollisionTol));
 
 	// 制限角度内のボーンは動かさない / a bone within the limit must not move.
 	FKawaiiPhysicsModifyBone Within;
@@ -229,7 +229,7 @@ bool FKawaiiPhysicsAngleLimitTest::RunTest(const FString& Parameters)
 	Within.PhysicsSettings.LimitAngle = 30.0f;
 	A.CallAngleLimit(Within, Parent);
 	TestTrue(TEXT("Angle limit: bone within limit is untouched"),
-	         Within.Location.Equals(FVector(10, 0, 0), GTol));
+	         Within.Location.Equals(FVector(10, 0, 0), GCollisionTol));
 
 	return true;
 }
