@@ -416,17 +416,20 @@ void UAnimGraphNode_KawaiiPhysics::CustomizeDetails(IDetailLayoutBuilder& Detail
 
 		// Basic
 		SafeSetOrder(FName("Bones"));
+		SafeSetOrder(FName("Bones|Bone Subdivision"));
 		SafeSetOrder(FName("Physics Settings"));
-		SafeSetOrder(FName("Physics Settings Advanced"));
+		SafeSetOrder(FName("Physics Settings|Curves"));
 
 		// Limits
 		SafeSetOrder(FName("Limits"));
-		SafeSetOrder(FName("Bone Constraint"));
+		SafeSetOrder(FName("Limits|Bone Constraint"));
+		SafeSetOrder(FName("Limits|Shared Collision"));
+		SafeSetOrder(FName("Limits|World Collision"));
 
-		// Other
-		SafeSetOrder(FName("Sync Bone"));
-		SafeSetOrder(FName("World Collision"));
-		SafeSetOrder(FName("ExternalForce"));
+		// Force
+		SafeSetOrder(FName("Force"));
+		SafeSetOrder(FName("Force|External Force"));
+		SafeSetOrder(FName("Force|Sync Bone"));
 
 		// AnimNode
 		SafeSetOrder(FName("Tag"));

@@ -225,7 +225,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* Corrects the Physics Settings/Damping parameters applied to each bone.
 	* Multiplies each parameter by the curve value for "Length from RootBone to specific bone / Length from RootBone to end bone" (0.0~1.0).
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings", AdvancedDisplay,
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings|Curves", AdvancedDisplay,
 		meta = (PinHiddenByDefault, DisplayName = "Damping Rate by Bone Length Rate"))
 	FRuntimeFloatCurve DampingCurveData;
 
@@ -235,7 +235,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* Corrects the Physics Settings/Stiffness parameters applied to each bone.
 	* Multiplies each parameter by the curve value for "Length from RootBone to specific bone / Length from RootBone to end bone" (0.0~1.0).
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings", AdvancedDisplay,
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings|Curves", AdvancedDisplay,
 		meta = (PinHiddenByDefault, DisplayName = "Stiffness Rate by Bone Length Rate"))
 	FRuntimeFloatCurve StiffnessCurveData;
 
@@ -247,7 +247,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* ※基となる値の意味は WorldDampingLocation を参照（大きいほど移動量を抑制 = 反映率は 1 - 値）
 	* Note: see WorldDampingLocation for the base value's meaning (higher = more suppression; reflection factor = 1 - value).
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings", AdvancedDisplay,
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings|Curves", AdvancedDisplay,
 		meta = (PinHiddenByDefault, DisplayName = "World Damping Location Rate by Bone Length Rate"))
 	FRuntimeFloatCurve WorldDampingLocationCurveData;
 
@@ -259,7 +259,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* ※基となる値の意味は WorldDampingRotation を参照（大きいほど回転量を抑制 = 反映率は 1 - 値）
 	* Note: see WorldDampingRotation for the base value's meaning (higher = more suppression; reflection factor = 1 - value).
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings", AdvancedDisplay,
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings|Curves", AdvancedDisplay,
 		meta = (PinHiddenByDefault, DisplayName = "World Damping Rotation Rate by Bone Length Rate"))
 	FRuntimeFloatCurve WorldDampingRotationCurveData;
 
@@ -269,7 +269,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* Corrects the Physics Settings/CollisionRadius parameters applied to each bone.
 	* Multiplies each parameter by the curve value for "Length from RootBone to specific bone / Length from RootBone to end bone" (0.0~1.0).
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings", AdvancedDisplay,
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings|Curves", AdvancedDisplay,
 		meta = (PinHiddenByDefault, DisplayName = "Radius Rate by Bone Length Rate"))
 	FRuntimeFloatCurve RadiusCurveData;
 
@@ -279,7 +279,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* Corrects the Physics Settings/LimitAngle parameters applied to each bone.
 	* Multiplies each parameter by the curve value for "Length from RootBone to specific bone / Length from RootBone to end bone" (0.0~1.0).
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings", AdvancedDisplay,
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Settings|Curves", AdvancedDisplay,
 		meta = (PinHiddenByDefault, DisplayName = "LimitAngle Rate by Bone Length Rate"))
 	FRuntimeFloatCurve LimitAngleCurveData;
 
@@ -382,28 +382,28 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* Stiffness type to use in Bone Constraint
 	* http://blog.mmacklin.com/2016/10/12/xpbd-slides-and-stiffness/
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bone Constraint",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits|Bone Constraint",
 		meta = (PinHiddenByDefault))
 	EXPBDComplianceType BoneConstraintGlobalComplianceType = EXPBDComplianceType::Leather;
 	/** 
 	* Bone Constraintの処理回数（コリジョン処理前）
 	* Number of Bone Constraints processed before collision processing
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bone Constraint",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits|Bone Constraint",
 		meta = (PinHiddenByDefault))
 	int32 BoneConstraintIterationCountBeforeCollision = 1;
 	/** 
 	* Bone Constraintの処理回数（コリジョン処理後）
 	* Number of Bone Constraints processed after collision processing
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bone Constraint",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits|Bone Constraint",
 		meta = (PinHiddenByDefault))
 	int32 BoneConstraintIterationCountAfterCollision = 1;
 	/** 
 	* 末端ボーンをBoneConstraint処理の対象にした場合、自動的にダミーボーンも処理対象にするフラグ
 	* Flag to automatically processes dummy bones when the end bones are subject to BoneConstraint processing.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bone Constraint",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits|Bone Constraint",
 		meta = (PinHiddenByDefault))
 	bool bAutoAddChildDummyBoneConstraint = true;
 
@@ -411,14 +411,14 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* BoneConstraint処理の対象となるボーンのペアを設定。スカートのように、ボーン間の距離を維持したい場合に使用
 	* Sets the bone pair to be processed by BoneConstraint. Used when you want to maintain the distance between bones, such as a skirt.
 	*/
-	UPROPERTY(EditAnywhere, Category = "Bone Constraint", meta=(TitleProperty="{Bone1} - {Bone2}"))
+	UPROPERTY(EditAnywhere, Category = "Limits|Bone Constraint", meta=(TitleProperty="{Bone1} - {Bone2}"))
 	TArray<FModifyBoneConstraint> BoneConstraints;
 
 	/** 
 	* BoneConstraint処理の対象となるボーンのペアを設定 (DataAsset版）。別AnimNode・ABPで設定を流用したい場合はこちらを推奨
 	* Set the bone pairs to be processed by BoneConstraint (DataAsset version). If you want to reuse the settings for another AnimNode or another ABP, this is recommended.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bone Constraint",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits|Bone Constraint",
 		meta = (PinHiddenByDefault))
 	TObjectPtr<UKawaiiPhysicsBoneConstraintsDataAsset> BoneConstraintsDataAsset;
 
@@ -426,7 +426,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* BoneConstraint処理の対象となるボーンのペアのプレビュー
 	* Preview of bone pairs that will be processed by BoneConstraint
 	*/
-	UPROPERTY(Transient, VisibleAnywhere, Category = "Bone Constraint", AdvancedDisplay,
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Limits|Bone Constraint", AdvancedDisplay,
 		meta=(TitleProperty="{Bone1} - {Bone2}"))
 	TArray<FModifyBoneConstraint> BoneConstraintsData;
 	// ランタイムキャッシュ(BoneConstraints + BoneConstraintsData)。InitBoneConstraints で再構築されるため非シリアライズ。
@@ -438,14 +438,14 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* 同期元のボーンの移動・回転を物理制御下のボーンに適用します。スカートが足などを貫通するのを防ぐのに役立ちます
 	* Applies the movement and rotation of the sync source bone to the bone under physics control. Helps prevent skirts from penetrating legs, etc.
 	*/
-	UPROPERTY(EditAnywhere, Category = "Sync Bone", meta=(TitleProperty="{Bone}"))
+	UPROPERTY(EditAnywhere, Category = "Force|Sync Bone", meta=(TitleProperty="{Bone}"))
 	TArray<FKawaiiPhysicsSyncBone> SyncBones;
 
 	/**
 	* 重力
 	* Gravity
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force",
 		meta = (PinHiddenByDefault))
 	FVector Gravity = FVector::ZeroVector;
 
@@ -457,33 +457,33 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* true : Legacy compatibility (add 0.5 * Gravity * dt^2 to position)
 	* false: AnimDynamics compatibility (add Gravity * dt to velocity before updating position)
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce", meta = (PinHiddenByDefault))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force", meta = (PinHiddenByDefault))
 	bool bUseLegacyGravity = false;
 
 	/**
 	* Gravityベクトルにプロジェクト設定の DefaultGravityZ（絶対値）を乗算する処理のフラグ
 	* Flag to multiply the DefaultGravityZ (absolute value) of the project settings to the Gravity vector
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce", meta = (PinHiddenByDefault))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force", meta = (PinHiddenByDefault))
 	bool bUseDefaultGravityZProjectSetting = false;
 
 	// 
 	// 重力をワールド座標系で扱うかどうかのフラグ
 	// Flag to handle gravity in world coordinate system
 	//
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce", meta = (PinHiddenByDefault))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force", meta = (PinHiddenByDefault))
 	bool bUseWorldSpaceGravity = true;
 
 	// 外力としてWindDirectionalSourceの影響を受けるかどうかのフラグ
 	// Flag to receive the influence of WindDirectionalSource as an external force
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce", meta = (PinHiddenByDefault))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force", meta = (PinHiddenByDefault))
 	bool bEnableWind = false;
 
 	/** 
 	* WindDirectionalSourceによる風の影響度。ClothやSpeedTreeとの併用目的
 	* Influence of wind by WindDirectionalSource. For use with Cloth and SpeedTree
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force",
 		meta = (EditCondition = "bEnableWind", PinHiddenByDefault))
 	float WindScale = 1.0f;
 
@@ -491,19 +491,19 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
     * WindDirectionalSourceによる風方向に与えるノイズ（角度）
     * Noise(Degree) of wind by WindDirectionalSource. For use with Cloth and SpeedTree
     */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force",
 		meta = (EditCondition = "bEnableWind", Units = "Degrees", ClampMin=0, PinHiddenByDefault))
 	float WindDirectionNoiseAngle = 0.0f;
 
 	// 単純な外力ベクトル
 	// Simple external force vector
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force|External Force",
 		meta = (PinHiddenByDefault))
 	FVector SimpleExternalForce = FVector::ZeroVector;
 
 	// 単純な外力をワールド座標系で扱うかどうかのフラグ
 	// Flag to handle simple external forces in world coordinate system
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force|External Force",
 		meta = (PinHiddenByDefault))
 	bool bUseWorldSpaceSimpleExternalForce = true;
 	
@@ -511,7 +511,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* 外力のプリセット。C++で独自のプリセットを追加可能(Instanced Struct)
 	* External force presets. You can add your own presets in C++.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExternalForce",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force|External Force",
 		meta = (BaseStruct = "/Script/KawaiiPhysics.KawaiiPhysics_ExternalForce", ExcludeBaseStruct))
 	TArray<FInstancedStruct> ExternalForces;
 
@@ -522,7 +522,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* External force presets. You can add your own presets in BP or C++
 	* Note: If you do not click on AnimNode or compile ABP, it will not work properly.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Instanced, Category = "ExternalForce",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Instanced, Category = "Force|External Force",
 		meta=(DisplayName="CustomExternalForces(EXPERIMENTAL)"))
 	TArray<TObjectPtr<UKawaiiPhysics_CustomExternalForce>> CustomExternalForces;
 
@@ -530,18 +530,18 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* レベル上の各コリジョンとの判定を行うフラグ。有効にすると物理処理の負荷が大幅に上がります
 	* Flag for collision detection with each collision on the level. Enabling this will significantly increase the load of physics processing.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Collision", meta = (PinHiddenByDefault))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits|World Collision", meta = (PinHiddenByDefault))
 	bool bAllowWorldCollision = false;
 
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Collision",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits|World Collision",
 		meta = (PinHiddenByDefault, InlineEditConditionToggle))
 	bool bOverrideCollisionParams = false;
 	/** 
 	* SkeletalMeshComponentが持つコリジョン設定ではなく、独自のコリジョン設定をWorldCollisionで使用する際に設定
 	* Use custom collision settings in WorldCollision instead of the collision settings set in SkeletalMeshComponent.
 	*/
-	UPROPERTY(EditAnywhere, Category = "World Collision",
+	UPROPERTY(EditAnywhere, Category = "Limits|World Collision",
 		meta = (PinHiddenByDefault, EditCondition = "bOverrideCollisionParams", DisplayName=
 			"Override SkelComp Collision Params"))
 	FBodyInstance CollisionChannelSettings;
@@ -550,7 +550,7 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* WorldCollisionにて、SkeletalMeshComponentが持つコリジョン(PhysicsAsset)を無視するフラグ
 	* In WorldCollision, Flag to ignore collisions for SkeletalMeshComponent(PhysicsAsset) in WorldCollision
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World Collision",
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits|World Collision",
 		meta = (PinHiddenByDefault, EditCondition = "bAllowWorldCollision"))
 	bool bIgnoreSelfComponent = true;
 
@@ -558,14 +558,14 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	* WorldCollisionにて、SkeletalMeshComponentが持つコリジョン(PhysicsAsset)を無視する設定（骨）
 	* In WorldCollision, set to ignore collision (PhysicsAsset) of SkeletalMeshComponent using bone
 	*/
-	UPROPERTY(EditAnywhere, Category = "World Collision", meta = (EditCondition = "!bIgnoreSelfComponent"))
+	UPROPERTY(EditAnywhere, Category = "Limits|World Collision", meta = (EditCondition = "!bIgnoreSelfComponent"))
 	TArray<FBoneReference> IgnoreBones;
 
 	/** 
 	* WorldCollisionにて、SkeletalMeshComponentが持つコリジョン(PhysicsAsset)を無視する設定（骨名のプリフィックス）
 	* In WorldCollision, set to ignore collision (PhysicsAsset) of SkeletalMeshComponent using bone name prefix
 	*/
-	UPROPERTY(EditAnywhere, Category = "World Collision", meta = (EditCondition = "!bIgnoreSelfComponent"))
+	UPROPERTY(EditAnywhere, Category = "Limits|World Collision", meta = (EditCondition = "!bIgnoreSelfComponent"))
 	TArray<FName> IgnoreBoneNamePrefix;
 
 	/**
