@@ -872,6 +872,24 @@ protected:
 	                  FKawaiiPhysicsSyncBone& SyncBone);
 
 	/**
+	 * BoneSubdivision由来の内部dummyをSyncBoneの子ターゲット/Previewから除外するか判定する。
+	 * Returns true when an internal BoneSubdivision dummy should stay out of SyncBone child targets/previews.
+	 */
+	bool IsExcludedFromSyncBoneChildTarget(const FKawaiiPhysicsModifyBone& Bone) const;
+
+	/**
+	 * SyncBoneの子ターゲットを収集する。内部dummyは飛ばすが、その子孫探索は継続する。
+	 * Collects SyncBone child targets while skipping internal dummies but still traversing their descendants.
+	 */
+	void CollectSyncBoneChildTargets(FKawaiiPhysicsSyncTargetRoot& TargetRoot);
+
+	/**
+	 * SyncBone適用後にBoneSubdivision由来dummyのPoseを実親/実子から再補間する。
+	 * Rebuilds BoneSubdivision dummy poses from their real endpoints after SyncBone moves target poses.
+	 */
+	void UpdateSubdivisionDummyPoseAfterSyncBones();
+
+	/**
 	 * Initializes the bone constraints for the physics simulation.
 	 */
 	void InitBoneConstraints();
@@ -1257,7 +1275,5 @@ private:
 	mutable FSimulationSpaceCache CurrentEvalWorldSpaceCache;
 	mutable bool bHasCurrentEvalWorldSpaceCache = false;
 };
-
-
 
 

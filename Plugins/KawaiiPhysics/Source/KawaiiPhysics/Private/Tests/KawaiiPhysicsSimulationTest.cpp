@@ -236,6 +236,69 @@ bool FKawaiiPhysicsBoneConstraintStepDeltaTimeTest::RunTest(const FString& Param
 }
 
 // ---------------------------------------------------------------------------
+//  SyncBone + BoneSubdivision / internal dummies stay out of SyncBone targets
+// ---------------------------------------------------------------------------
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsSyncBoneSubdivisionTargetTest,
+                                 "KawaiiPhysics.Simulation.SyncBoneSubdivisionTargets",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FKawaiiPhysicsSyncBoneSubdivisionTargetTest::RunTest(const FString& Parameters)
+{
+	FKawaiiPhysicsTestAccessor A;
+	A.BuildSyncBoneSubdivisionFixture();
+
+	const FKawaiiPhysicsSyncTargetRoot TargetRoot = A.CollectSyncChildTargetsForRoot(0);
+	auto HasTargetIndex = [&](int32 Index)
+	{
+		return TargetRoot.ChildTargets.ContainsByPredicate([&](const FKawaiiPhysicsSyncTarget& Target)
+		{
+			return Target.ModifyBoneIndex == Index;
+		});
+	};
+
+	TestEqual(TEXT("Only real child + legacy direct tip dummy are exposed as SyncBone child targets"),
+	          TargetRoot.ChildTargets.Num(), 2);
+	TestTrue(TEXT("Real child remains a SyncBone child target"), HasTargetIndex(2));
+	TestTrue(TEXT("Legacy direct tip dummy keeps existing SyncBone behavior"), HasTargetIndex(5));
+	TestFalse(TEXT("Inter-bone dummy between real bones is hidden from SyncBone targets"), HasTargetIndex(1));
+	TestFalse(TEXT("Terminal inter-bone dummy is hidden from SyncBone targets"), HasTargetIndex(3));
+	TestFalse(TEXT("Subdivided tip dummy is hidden from SyncBone targets"), HasTargetIndex(4));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsSyncBoneSubdivisionPoseRefreshTest,
+                                 "KawaiiPhysics.Simulation.SyncBoneSubdivisionPoseRefresh",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FKawaiiPhysicsSyncBoneSubdivisionPoseRefreshTest::RunTest(const FString& Parameters)
+{
+	FKawaiiPhysicsTestAccessor A;
+	A.BuildSyncBoneSubdivisionFixture();
+
+	A.Bone(0).PoseLocation = FVector(0.0f, 0.0f, 0.0f);
+	A.Bone(2).PoseLocation = FVector(12.0f, 0.0f, 0.0f);
+	A.Bone(1).PoseLocation = FVector(100.0f, 0.0f, 0.0f);
+	A.Bone(3).PoseLocation = FVector(100.0f, 0.0f, 0.0f);
+	A.Bone(4).PoseLocation = FVector(100.0f, 0.0f, 0.0f);
+
+	A.CallUpdateSubdivisionDummyPoseAfterSyncBones();
+
+	const float Tol = 0.001f;
+	TestTrue(FString::Printf(TEXT("Inter-bone dummy is re-lerped after SyncBone: %s"),
+	                         *A.Bone(1).PoseLocation.ToString()),
+	         A.Bone(1).PoseLocation.Equals(FVector(6.0f, 0.0f, 0.0f), Tol));
+	TestTrue(FString::Printf(TEXT("Subdivided tip dummy follows its real ancestor: %s"),
+	                         *A.Bone(4).PoseLocation.ToString()),
+	         A.Bone(4).PoseLocation.Equals(FVector(16.0f, 0.0f, 0.0f), Tol));
+	TestTrue(FString::Printf(TEXT("Terminal inter-bone dummy is re-lerped to refreshed tip: %s"),
+	                         *A.Bone(3).PoseLocation.ToString()),
+	         A.Bone(3).PoseLocation.Equals(FVector(14.0f, 0.0f, 0.0f), Tol));
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------
 //  パラメータ応答 / Parameter response
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsParameterResponseTest,

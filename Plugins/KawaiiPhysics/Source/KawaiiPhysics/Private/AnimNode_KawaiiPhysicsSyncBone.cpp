@@ -75,56 +75,125 @@ void FAnimNode_KawaiiPhysics::InitSyncBone(FComponentSpacePoseContext& Output, c
 			continue;
 		}
 
-		// For Calculate LengthRateFromSyncTargetRoot
-		const float StartLength = ModifyBones[TargetRoot.ModifyBoneIndex].LengthFromRoot;
-		float MaxLength = StartLength;
+		CollectSyncBoneChildTargets(TargetRoot);
+	}
+}
 
-		// Collect Child Bones
-		TArray<int32> IndicesToProcess = ModifyBones[TargetRoot.ModifyBoneIndex].ChildIndices;
-		while (!IndicesToProcess.IsEmpty())
+bool FAnimNode_KawaiiPhysics::IsExcludedFromSyncBoneChildTarget(const FKawaiiPhysicsModifyBone& Bone) const
+{
+	return Bone.bInterBoneDummy || (Bone.bDummy && Bone.InterBoneRealParentIndex >= 0);
+}
+
+void FAnimNode_KawaiiPhysics::CollectSyncBoneChildTargets(FKawaiiPhysicsSyncTargetRoot& TargetRoot)
+{
+	TargetRoot.ChildTargets.Empty();
+
+	if (!ModifyBones.IsValidIndex(TargetRoot.ModifyBoneIndex))
+	{
+		return;
+	}
+
+	// For Calculate LengthRateFromSyncTargetRoot
+	const float StartLength = ModifyBones[TargetRoot.ModifyBoneIndex].LengthFromRoot;
+	float MaxLength = StartLength;
+
+	// Collect Child Bones. BoneSubdivision dummies are internal calculation points, so they are
+	// traversed but not exposed as SyncBone targets or editor preview entries.
+	TArray<int32> IndicesToProcess = ModifyBones[TargetRoot.ModifyBoneIndex].ChildIndices;
+	while (!IndicesToProcess.IsEmpty())
+	{
+		const int32 CurrentIndex = IndicesToProcess.Pop();
+		if (!ModifyBones.IsValidIndex(CurrentIndex))
 		{
-			const int32 CurrentIndex = IndicesToProcess.Pop();
-			if (!ModifyBones.IsValidIndex(CurrentIndex))
-			{
-				continue;
-			}
+			continue;
+		}
 
-			TargetRoot.ChildTargets.AddUnique({CurrentIndex});
+		const FKawaiiPhysicsModifyBone& ModifyBone = ModifyBones[CurrentIndex];
+		if (!IsExcludedFromSyncBoneChildTarget(ModifyBone))
+		{
+			const int32 TargetIndex = TargetRoot.ChildTargets.AddUnique({CurrentIndex});
 
 #if WITH_EDITORONLY_DATA
-			TargetRoot.ChildTargets.Last().PreviewBone = ModifyBones[CurrentIndex].BoneRef;
+			TargetRoot.ChildTargets[TargetIndex].PreviewBone = ModifyBone.BoneRef;
 #endif
 
-			IndicesToProcess.Append(ModifyBones[CurrentIndex].ChildIndices);
-			MaxLength = FMath::Max(MaxLength, ModifyBones[CurrentIndex].LengthFromRoot);
+			MaxLength = FMath::Max(MaxLength, ModifyBone.LengthFromRoot);
 		}
 
-		// Calculate LengthRateFromSyncTargetRoot
-		const float LengthRange = MaxLength - StartLength;
-		TargetRoot.LengthRateFromSyncTargetRoot = 0.0f;
+		IndicesToProcess.Append(ModifyBone.ChildIndices);
+	}
+
+	// Calculate LengthRateFromSyncTargetRoot
+	const float LengthRange = MaxLength - StartLength;
+	TargetRoot.LengthRateFromSyncTargetRoot = 0.0f;
+	for (auto& Target : TargetRoot.ChildTargets)
+	{
+		if (LengthRange > KINDA_SMALL_NUMBER)
+		{
+			Target.LengthRateFromSyncTargetRoot =
+				(ModifyBones[Target.ModifyBoneIndex].LengthFromRoot - StartLength) / LengthRange;
+		}
+		else
+		{
+			Target.LengthRateFromSyncTargetRoot = 0.0f;
+		}
+	}
+
+	// Update Alpha by Length Rate & Curve
+	if (const FRichCurve* ScaleCurve = TargetRoot.ScaleCurveByBoneLengthRate.GetRichCurveConst();
+		ScaleCurve && !ScaleCurve->IsEmpty())
+	{
+		TargetRoot.UpdateScaleByLengthRate(ScaleCurve);
 		for (auto& Target : TargetRoot.ChildTargets)
 		{
-			if (LengthRange > KINDA_SMALL_NUMBER)
-			{
-				Target.LengthRateFromSyncTargetRoot =
-					(ModifyBones[Target.ModifyBoneIndex].LengthFromRoot - StartLength) / LengthRange;
-			}
-			else
-			{
-				Target.LengthRateFromSyncTargetRoot = 0.0f;
-			}
+			Target.UpdateScaleByLengthRate(ScaleCurve);
+		}
+	}
+}
+
+void FAnimNode_KawaiiPhysics::UpdateSubdivisionDummyPoseAfterSyncBones()
+{
+	// Pass 1: subdivided tip dummies depend only on their real ancestor.
+	for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
+	{
+		if (!Bone.bDummy || Bone.bInterBoneDummy || Bone.InterBoneRealParentIndex < 0)
+		{
+			continue;
 		}
 
-		// Update Alpha by Length Rate & Curve
-		if (const FRichCurve* ScaleCurve = TargetRoot.ScaleCurveByBoneLengthRate.GetRichCurveConst();
-			ScaleCurve && !ScaleCurve->IsEmpty())
+		if (!ensureMsgf(ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex),
+		                TEXT("KawaiiPhysics: invalid subdivided tip-dummy real ancestor index.")))
 		{
-			TargetRoot.UpdateScaleByLengthRate(ScaleCurve);
-			for (auto& Target : TargetRoot.ChildTargets)
-			{
-				Target.UpdateScaleByLengthRate(ScaleCurve);
-			}
+			continue;
 		}
+
+		const FKawaiiPhysicsModifyBone& RealAncestor = ModifyBones[Bone.InterBoneRealParentIndex];
+		Bone.PoseLocation = RealAncestor.PoseLocation +
+			GetBoneForwardVector(RealAncestor.PoseRotation) * DummyBoneLength;
+		Bone.PoseRotation = RealAncestor.PoseRotation;
+		Bone.PoseScale = RealAncestor.PoseScale;
+	}
+
+	// Pass 2: inter-bone dummies are interpolation points between post-SyncBone endpoints.
+	for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
+	{
+		if (!Bone.bInterBoneDummy)
+		{
+			continue;
+		}
+
+		if (!ensureMsgf(ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex) &&
+		                ModifyBones.IsValidIndex(Bone.InterBoneRealChildIndex),
+		                TEXT("KawaiiPhysics: invalid inter-bone dummy endpoint index.")))
+		{
+			continue;
+		}
+
+		const FKawaiiPhysicsModifyBone& RealParent = ModifyBones[Bone.InterBoneRealParentIndex];
+		const FKawaiiPhysicsModifyBone& RealChild = ModifyBones[Bone.InterBoneRealChildIndex];
+		Bone.PoseLocation = FMath::Lerp(RealParent.PoseLocation, RealChild.PoseLocation, Bone.InterBoneAlpha);
+		Bone.PoseRotation = FQuat::Slerp(RealParent.PoseRotation, RealChild.PoseRotation, Bone.InterBoneAlpha);
+		Bone.PoseScale = FMath::Lerp(RealParent.PoseScale, RealChild.PoseScale, Bone.InterBoneAlpha);
 	}
 }
 
@@ -284,4 +353,6 @@ void FAnimNode_KawaiiPhysics::ApplySyncBones(FComponentSpacePoseContext& Output,
 			}
 		}
 	}
+
+	UpdateSubdivisionDummyPoseAfterSyncBones();
 }

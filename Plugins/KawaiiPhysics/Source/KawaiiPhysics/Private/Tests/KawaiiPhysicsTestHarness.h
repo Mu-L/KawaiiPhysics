@@ -98,6 +98,59 @@ struct FKawaiiPhysicsTestAccessor
 		}
 	}
 
+	/**
+	 * SyncBone + BoneSubdivision regression fixture.
+	 * index 0 = real root, 1 = inter-bone dummy, 2 = real child,
+	 * 3 = terminal inter-bone dummy, 4 = subdivided tip dummy, 5 = legacy direct tip dummy.
+	 */
+	void BuildSyncBoneSubdivisionFixture()
+	{
+		Node.ModifyBones.Reset();
+		Node.DummyBoneLength = 4.0f;
+
+		auto AddBone = [&](int32 Index, int32 ParentIndex, const FVector& Loc, float LengthFromRoot,
+		                   float BoneLength, bool bDummy, bool bInterBoneDummy,
+		                   int32 RealParentIndex = -1, int32 RealChildIndex = -1, float Alpha = 0.0f,
+		                   FName BoneName = NAME_None)
+		{
+			FKawaiiPhysicsModifyBone Bone;
+			Bone.Index = Index;
+			Bone.ParentIndex = ParentIndex;
+			Bone.BoneRef.BoneName = BoneName;
+			Bone.Location = Loc;
+			Bone.PrevLocation = Loc;
+			Bone.PoseLocation = Loc;
+			Bone.PrevPoseLocation = Loc;
+			Bone.CurrentPoseLocation = Loc;
+			Bone.PoseRotation = FQuat::Identity;
+			Bone.PrevPoseRotation = FQuat::Identity;
+			Bone.CurrentPoseRotation = FQuat::Identity;
+			Bone.PoseScale = FVector::OneVector;
+			Bone.BoneLength = BoneLength;
+			Bone.LengthFromRoot = LengthFromRoot;
+			Bone.bDummy = bDummy;
+			Bone.bInterBoneDummy = bInterBoneDummy;
+			Bone.InterBoneRealParentIndex = RealParentIndex;
+			Bone.InterBoneRealChildIndex = RealChildIndex;
+			Bone.InterBoneAlpha = Alpha;
+			Node.ModifyBones.Add(Bone);
+		};
+
+		AddBone(0, -1, FVector(0.0f, 0.0f, 0.0f), 0.0f, 0.0f, false, false, -1, -1, 0.0f,
+		        FName(TEXT("Root")));
+		AddBone(1, 0, FVector(5.0f, 0.0f, 0.0f), 5.0f, 5.0f, true, true, 0, 2, 0.5f);
+		AddBone(2, 1, FVector(10.0f, 0.0f, 0.0f), 10.0f, 5.0f, false, false, -1, -1, 0.0f,
+		        FName(TEXT("Child")));
+		AddBone(3, 2, FVector(12.0f, 0.0f, 0.0f), 12.0f, 2.0f, true, true, 2, 4, 0.5f);
+		AddBone(4, 3, FVector(14.0f, 0.0f, 0.0f), 14.0f, 2.0f, true, false, 2);
+		AddBone(5, 0, FVector(0.0f, 4.0f, 0.0f), 4.0f, 4.0f, true, false);
+
+		Node.ModifyBones[0].ChildIndices = {1, 5};
+		Node.ModifyBones[1].ChildIndices = {2};
+		Node.ModifyBones[2].ChildIndices = {3};
+		Node.ModifyBones[3].ChildIndices = {4};
+	}
+
 	/** 全ボーンに同一の PhysicsSettings を適用 / Apply the same PhysicsSettings to every bone. */
 	void SetAllPhysicsSettings(const FKawaiiPhysicsSettings& Settings)
 	{
@@ -301,6 +354,19 @@ struct FKawaiiPhysicsTestAccessor
 	void CallBoneConstraints()
 	{
 		Node.AdjustByBoneConstraints();
+	}
+
+	FKawaiiPhysicsSyncTargetRoot CollectSyncChildTargetsForRoot(int32 RootIndex)
+	{
+		FKawaiiPhysicsSyncTargetRoot TargetRoot;
+		TargetRoot.ModifyBoneIndex = RootIndex;
+		Node.CollectSyncBoneChildTargets(TargetRoot);
+		return TargetRoot;
+	}
+
+	void CallUpdateSubdivisionDummyPoseAfterSyncBones()
+	{
+		Node.UpdateSubdivisionDummyPoseAfterSyncBones();
 	}
 
 	// 直接呼び出しテスト用の時間状態（bInSubstep=false なので GetStepDeltaTime()==Dt）。
