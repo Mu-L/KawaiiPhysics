@@ -811,6 +811,14 @@ public:
 	FTransform GetBoneTransformInSimSpace(FComponentSpacePoseContext& Output,
 	                                      const FCompactPoseBoneIndex& BoneIndex) const;
 
+	// BoneSpace外力が使うボーンTransformを解決。dummyは実親基準、非dummyでもLODでculledされた実ボーンは
+	// 無効indexになるため、両者ともガードする（無効→Identity、クラッシュ回避）。
+	// Resolve the bone transform used by bone-space external forces. Dummies use their real parent; non-dummy
+	// real bones can also be LOD-culled (invalid compact-pose index), so guard both (invalid -> Identity, no crash).
+	FTransform ResolveExternalForceBoneTransform(FComponentSpacePoseContext& Output,
+	                                             const FKawaiiPhysicsModifyBone& Bone,
+	                                             const FKawaiiPhysicsModifyBone& ParentBone) const;
+
 	// Convert a transform from one simulation space to another (internal cache-aware)
 	FTransform ConvertSimulationSpaceTransform(FComponentSpacePoseContext& Output,
 	                                           EKawaiiPhysicsSimulationSpace From,
@@ -887,7 +895,23 @@ protected:
 	 * SyncBone適用後にBoneSubdivision由来dummyのPoseを実親/実子から再補間する。
 	 * Rebuilds BoneSubdivision dummy poses from their real endpoints after SyncBone moves target poses.
 	 */
-	void UpdateSubdivisionDummyPoseAfterSyncBones();
+	void UpdateSubdivisionDummyPoseAfterSyncBones(const FBoneContainer& BoneContainer);
+
+	/**
+	 * 分割末端(tip) dummyのPoseを実親(ancestor)から計算する。UpdateModifyBonesPoseTransformと
+	 * UpdateSubdivisionDummyPoseAfterSyncBonesで共有。
+	 * Computes a subdivided tip-dummy pose from its real ancestor. Shared by UpdateModifyBonesPoseTransform
+	 * and UpdateSubdivisionDummyPoseAfterSyncBones.
+	 */
+	void UpdateTipDummyPose(FKawaiiPhysicsModifyBone& Bone);
+
+	/**
+	 * inter-bone dummyのPoseを実親・実子から補間する（LODで実子が無効な場合は親へフォールバック）。
+	 * 上記2関数で共有し、LODフォールバックの実装漏れを防ぐ。
+	 * Interpolates an inter-bone dummy pose from its real endpoints (falls back to the parent when the real
+	 * child is LOD-culled). Shared by the two functions above to prevent missing the LOD fallback.
+	 */
+	void UpdateInterBoneDummyPose(FKawaiiPhysicsModifyBone& Bone, const FBoneContainer& BoneContainer);
 
 	/**
 	 * Initializes the bone constraints for the physics simulation.

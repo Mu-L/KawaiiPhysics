@@ -558,6 +558,30 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 	// Note: DeltaTimeOld is set by the caller SimulateModifyBones (legacy=DeltaTime / substep=FixedDt)
 }
 
+FTransform FAnimNode_KawaiiPhysics::ResolveExternalForceBoneTransform(
+	FComponentSpacePoseContext& Output, const FKawaiiPhysicsModifyBone& Bone,
+	const FKawaiiPhysicsModifyBone& ParentBone) const
+{
+	// dummy（inter-bone / 分割末端）は実親ボーンのTransformを使用（親が別dummyでBoneRef空のときのクラッシュ防止）。
+	// 非dummyでもLODでcompact poseから外れた実ボーンは無効indexになるため、両者ともガードする。
+	// Dummies use the real parent transform (avoids empty-BoneRef crash); non-dummy real bones can also be
+	// LOD-culled (invalid compact-pose index), so guard both. Invalid -> Identity (no crash).
+	const FKawaiiPhysicsModifyBone& TransformBone =
+		Bone.bDummy
+			? (ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex)
+				   ? ModifyBones[Bone.InterBoneRealParentIndex]
+				   : ParentBone)
+			: Bone;
+	const FCompactPoseBoneIndex TransformCPI =
+		TransformBone.BoneRef.GetCompactPoseIndex(Output.Pose.GetPose().GetBoneContainer());
+	if (TransformCPI >= 0)
+	{
+		return GetBoneTransformInSimSpace(Output, TransformCPI);
+	}
+	// 無効CompactPose(LOD等) → Identity / invalid CompactPose -> Identity
+	return FTransform::Identity;
+}
+
 void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSceneInterface* Scene,
                                        const FTransform& ComponentTransform,
                                        const float& Exponent, const USkeletalMeshComponent* SkelComp,
@@ -632,28 +656,7 @@ void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSc
 	{
 		if (CustomExternalForces[i] && CustomExternalForces[i]->bIsEnabled)
 		{
-			FTransform BoneTM = FTransform::Identity;
-			if (Bone.bDummy)
-			{
-				// inter-bone dummy / 分割末端dummy は実親ボーンのTransformを使用（親がまた別のdummyでBoneRef空のときにクラッシュ防止）
-				// Inter-bone & subdivided tip dummies use the real parent transform (prevents crash when the parent is another dummy with empty BoneRef)
-				const FKawaiiPhysicsModifyBone& TransformBone = ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex)
-					? ModifyBones[Bone.InterBoneRealParentIndex]
-					: ParentBone;
-				const FCompactPoseBoneIndex TransformCPI =
-					TransformBone.BoneRef.GetCompactPoseIndex(Output.Pose.GetPose().GetBoneContainer());
-				if (TransformCPI >= 0)
-				{
-					BoneTM = GetBoneTransformInSimSpace(Output, TransformCPI);
-				}
-				// else: 無効CompactPose(LOD等) → BoneTMはIdentityのまま / invalid CompactPose → keep Identity
-			}
-			else
-			{
-				BoneTM = GetBoneTransformInSimSpace(
-					Output, Bone.BoneRef.GetCompactPoseIndex(Output.Pose.GetPose().GetBoneContainer()));
-			}
-
+			const FTransform BoneTM = ResolveExternalForceBoneTransform(Output, Bone, ParentBone);
 			CustomExternalForces[i]->Apply(*this, Bone.Index, SkelComp, BoneTM);
 		}
 	}
@@ -667,28 +670,7 @@ void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSc
 			{
 				if (ExForce->ExternalForceSpace == EExternalForceSpace::BoneSpace)
 				{
-					FTransform BoneTM = FTransform::Identity;
-					if (Bone.bDummy)
-					{
-						// inter-bone dummy / 分割末端dummy は実親ボーンのTransformを使用（BoneRef空クラッシュ防止）
-						// Inter-bone & subdivided tip dummies use the real parent transform (prevents empty-BoneRef crash)
-						const FKawaiiPhysicsModifyBone& TransformBone = ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex)
-							? ModifyBones[Bone.InterBoneRealParentIndex]
-							: ParentBone;
-						const FCompactPoseBoneIndex TransformCPI =
-							TransformBone.BoneRef.GetCompactPoseIndex(Output.Pose.GetPose().GetBoneContainer());
-						if (TransformCPI >= 0)
-						{
-							BoneTM = GetBoneTransformInSimSpace(Output, TransformCPI);
-						}
-						// else: 無効CompactPose(LOD等) → BoneTMはIdentityのまま / invalid CompactPose → keep Identity
-					}
-					else
-					{
-						BoneTM = GetBoneTransformInSimSpace(
-							Output, Bone.BoneRef.GetCompactPoseIndex(Output.Pose.GetPose().GetBoneContainer()));
-					}
-
+					const FTransform BoneTM = ResolveExternalForceBoneTransform(Output, Bone, ParentBone);
 					ExForce->Apply(Bone, *this, Output, BoneTM);
 				}
 				else

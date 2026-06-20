@@ -117,6 +117,12 @@ struct FKawaiiPhysicsTestAccessor
 			Bone.Index = Index;
 			Bone.ParentIndex = ParentIndex;
 			Bone.BoneRef.BoneName = BoneName;
+			if (!bDummy)
+			{
+				// 実ボーンは有効な CompactPoseIndex を持たせ、LODフォールバック判定が誤発火しないようにする。
+				// Give real bones a valid compact-pose index so the LOD fallback doesn't misfire headlessly.
+				Bone.BoneRef.CachedCompactPoseIndex = FCompactPoseBoneIndex(Index);
+			}
 			Bone.Location = Loc;
 			Bone.PrevLocation = Loc;
 			Bone.PoseLocation = Loc;
@@ -366,7 +372,10 @@ struct FKawaiiPhysicsTestAccessor
 
 	void CallUpdateSubdivisionDummyPoseAfterSyncBones()
 	{
-		Node.UpdateSubdivisionDummyPoseAfterSyncBones();
+		// GetCompactPoseIndex は bUseSkeletonIndex=false 時 CachedCompactPoseIndex を返す（コンテナ非依存）ため空でよい。
+		// GetCompactPoseIndex returns CachedCompactPoseIndex (container-independent here), so an empty container suffices.
+		FBoneContainer EmptyContainer;
+		Node.UpdateSubdivisionDummyPoseAfterSyncBones(EmptyContainer);
 	}
 
 	// 直接呼び出しテスト用の時間状態（bInSubstep=false なので GetStepDeltaTime()==Dt）。

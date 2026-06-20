@@ -151,7 +151,7 @@ void FAnimNode_KawaiiPhysics::CollectSyncBoneChildTargets(FKawaiiPhysicsSyncTarg
 	}
 }
 
-void FAnimNode_KawaiiPhysics::UpdateSubdivisionDummyPoseAfterSyncBones()
+void FAnimNode_KawaiiPhysics::UpdateSubdivisionDummyPoseAfterSyncBones(const FBoneContainer& BoneContainer)
 {
 	// Pass 1: subdivided tip dummies depend only on their real ancestor.
 	for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
@@ -161,20 +161,12 @@ void FAnimNode_KawaiiPhysics::UpdateSubdivisionDummyPoseAfterSyncBones()
 			continue;
 		}
 
-		if (!ensureMsgf(ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex),
-		                TEXT("KawaiiPhysics: invalid subdivided tip-dummy real ancestor index.")))
-		{
-			continue;
-		}
-
-		const FKawaiiPhysicsModifyBone& RealAncestor = ModifyBones[Bone.InterBoneRealParentIndex];
-		Bone.PoseLocation = RealAncestor.PoseLocation +
-			GetBoneForwardVector(RealAncestor.PoseRotation) * DummyBoneLength;
-		Bone.PoseRotation = RealAncestor.PoseRotation;
-		Bone.PoseScale = RealAncestor.PoseScale;
+		UpdateTipDummyPose(Bone);
 	}
 
 	// Pass 2: inter-bone dummies are interpolation points between post-SyncBone endpoints.
+	// 共有ヘルパでLODフォールバックを UpdateModifyBonesPoseTransform と一致させる。
+	// Shared helper keeps the LOD fallback consistent with UpdateModifyBonesPoseTransform.
 	for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
 	{
 		if (!Bone.bInterBoneDummy)
@@ -182,18 +174,7 @@ void FAnimNode_KawaiiPhysics::UpdateSubdivisionDummyPoseAfterSyncBones()
 			continue;
 		}
 
-		if (!ensureMsgf(ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex) &&
-		                ModifyBones.IsValidIndex(Bone.InterBoneRealChildIndex),
-		                TEXT("KawaiiPhysics: invalid inter-bone dummy endpoint index.")))
-		{
-			continue;
-		}
-
-		const FKawaiiPhysicsModifyBone& RealParent = ModifyBones[Bone.InterBoneRealParentIndex];
-		const FKawaiiPhysicsModifyBone& RealChild = ModifyBones[Bone.InterBoneRealChildIndex];
-		Bone.PoseLocation = FMath::Lerp(RealParent.PoseLocation, RealChild.PoseLocation, Bone.InterBoneAlpha);
-		Bone.PoseRotation = FQuat::Slerp(RealParent.PoseRotation, RealChild.PoseRotation, Bone.InterBoneAlpha);
-		Bone.PoseScale = FMath::Lerp(RealParent.PoseScale, RealChild.PoseScale, Bone.InterBoneAlpha);
+		UpdateInterBoneDummyPose(Bone, BoneContainer);
 	}
 }
 
@@ -354,5 +335,5 @@ void FAnimNode_KawaiiPhysics::ApplySyncBones(FComponentSpacePoseContext& Output,
 		}
 	}
 
-	UpdateSubdivisionDummyPoseAfterSyncBones();
+	UpdateSubdivisionDummyPoseAfterSyncBones(BoneContainer);
 }

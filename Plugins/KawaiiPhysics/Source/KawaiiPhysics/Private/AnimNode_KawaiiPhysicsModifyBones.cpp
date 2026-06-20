@@ -466,6 +466,64 @@ void FAnimNode_KawaiiPhysics::CalcBoneLength(FKawaiiPhysicsModifyBone& Bone,
 }
 
 
+void FAnimNode_KawaiiPhysics::UpdateTipDummyPose(FKawaiiPhysicsModifyBone& Bone)
+{
+	// tip dummy: 分割時は即時親がインターボーンダミー(Pass2でしか確定しない)になるため、
+	// 実親(InterBoneRealParentIndex)を基準に計算して循環依存を回避。非分割時はParentIndex。
+	// Tip dummy: when subdivided, the immediate parent is an inter-bone dummy (only set in Pass 2),
+	// so compute from the real ancestor to avoid a stale/circular pose. Non-subdivided uses ParentIndex.
+	const int32 RealAncestorIndex = (Bone.InterBoneRealParentIndex >= 0)
+		                                ? Bone.InterBoneRealParentIndex
+		                                : Bone.ParentIndex;
+	if (!ensureMsgf(ModifyBones.IsValidIndex(RealAncestorIndex),
+	                TEXT("KawaiiPhysics: invalid tip-dummy real ancestor index.")))
+	{
+		return;
+	}
+	const FKawaiiPhysicsModifyBone& RealAncestor = ModifyBones[RealAncestorIndex];
+	Bone.PoseLocation = RealAncestor.PoseLocation +
+		GetBoneForwardVector(RealAncestor.PoseRotation) * DummyBoneLength;
+	Bone.PoseRotation = RealAncestor.PoseRotation;
+	Bone.PoseScale = RealAncestor.PoseScale;
+}
+
+void FAnimNode_KawaiiPhysics::UpdateInterBoneDummyPose(FKawaiiPhysicsModifyBone& Bone,
+                                                       const FBoneContainer& BoneContainer)
+{
+	if (!ensureMsgf(ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex) &&
+	                ModifyBones.IsValidIndex(Bone.InterBoneRealChildIndex),
+	                TEXT("KawaiiPhysics: invalid inter-bone dummy endpoint index.")))
+	{
+		return;
+	}
+
+	const FKawaiiPhysicsModifyBone& RealParent = ModifyBones[Bone.InterBoneRealParentIndex];
+	const FKawaiiPhysicsModifyBone& RealChild = ModifyBones[Bone.InterBoneRealChildIndex];
+
+	// 末端ダミーを実子とする場合、tip dummyはBoneRef空でCompactPose<0になるが
+	// PoseLocationは確定済みなのでLODフォールバック判定から除外する
+	// When the real child is a tip dummy (empty BoneRef → CompactPose<0), its PoseLocation is
+	// already computed, so exclude it from the LOD fallback check.
+	const bool bRealChildIsTipDummy = RealChild.bDummy && !RealChild.bInterBoneDummy;
+
+	// LOD安全チェック: RealChildがLODで無効な場合、親のPoseにフォールバック
+	// LOD safety: if the real child is invalid under the current LOD, fall back to the parent pose.
+	const FCompactPoseBoneIndex RealChildCompactPose = RealChild.BoneRef.GetCompactPoseIndex(BoneContainer);
+	if (!bRealChildIsTipDummy && RealChildCompactPose < 0)
+	{
+		const FKawaiiPhysicsModifyBone& ParentBone = ModifyBones[Bone.ParentIndex];
+		Bone.PoseLocation = ParentBone.PoseLocation;
+		Bone.PoseRotation = ParentBone.PoseRotation;
+		Bone.PoseScale = ParentBone.PoseScale;
+	}
+	else
+	{
+		Bone.PoseLocation = FMath::Lerp(RealParent.PoseLocation, RealChild.PoseLocation, Bone.InterBoneAlpha);
+		Bone.PoseRotation = FQuat::Slerp(RealParent.PoseRotation, RealChild.PoseRotation, Bone.InterBoneAlpha);
+		Bone.PoseScale = FMath::Lerp(RealParent.PoseScale, RealChild.PoseScale, Bone.InterBoneAlpha);
+	}
+}
+
 void FAnimNode_KawaiiPhysics::UpdateModifyBonesPoseTransform(FComponentSpacePoseContext& Output,
                                                              const FBoneContainer& BoneContainer)
 {
@@ -491,23 +549,7 @@ void FAnimNode_KawaiiPhysics::UpdateModifyBonesPoseTransform(FComponentSpacePose
 
 		if (Bone.bDummy)
 		{
-			// tip dummy: 分割時は即時親がインターボーンダミー(Pass2でしか確定しない)になるため、
-			// 実親(InterBoneRealParentIndex)を基準に計算して循環依存を回避
-			// Tip dummy: when subdivided, the immediate parent is an inter-bone dummy (only set in Pass 2),
-			// so compute from the real ancestor (InterBoneRealParentIndex) to avoid a stale/circular pose
-			const int32 RealAncestorIndex = (Bone.InterBoneRealParentIndex >= 0)
-				                                ? Bone.InterBoneRealParentIndex
-				                                : Bone.ParentIndex;
-			if (!ensureMsgf(ModifyBones.IsValidIndex(RealAncestorIndex),
-			                TEXT("KawaiiPhysics: invalid tip-dummy real ancestor index.")))
-			{
-				continue;
-			}
-			const auto& RealAncestor = ModifyBones[RealAncestorIndex];
-			Bone.PoseLocation = RealAncestor.PoseLocation +
-				GetBoneForwardVector(RealAncestor.PoseRotation) * DummyBoneLength;
-			Bone.PoseRotation = RealAncestor.PoseRotation;
-			Bone.PoseScale = RealAncestor.PoseScale;
+			UpdateTipDummyPose(Bone);
 		}
 		else
 		{
@@ -540,37 +582,7 @@ void FAnimNode_KawaiiPhysics::UpdateModifyBonesPoseTransform(FComponentSpacePose
 			continue;
 		}
 
-		if (!ensureMsgf(ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex) &&
-		                ModifyBones.IsValidIndex(Bone.InterBoneRealChildIndex),
-		                TEXT("KawaiiPhysics: invalid inter-bone dummy endpoint index.")))
-		{
-			continue;
-		}
-
-		const auto& RealParent = ModifyBones[Bone.InterBoneRealParentIndex];
-		const auto& RealChild = ModifyBones[Bone.InterBoneRealChildIndex];
-
-		// 末端ダミーを実子とする場合、tip dummyはBoneRef空でCompactPose<0になるが
-		// PoseLocationはPass1で確定済みなのでLODフォールバック判定から除外する
-		// When the real child is a tip dummy (empty BoneRef → CompactPose<0), its PoseLocation is
-		// already computed in Pass 1, so exclude it from the LOD fallback check.
-		const bool bRealChildIsTipDummy = RealChild.bDummy && !RealChild.bInterBoneDummy;
-
-		// LOD安全チェック: RealChildがLODで無効な場合、親のPoseにフォールバック
-		const auto RealChildCompactPose = RealChild.BoneRef.GetCompactPoseIndex(BoneContainer);
-		if (!bRealChildIsTipDummy && RealChildCompactPose < 0)
-		{
-			const auto& ParentBone = ModifyBones[Bone.ParentIndex];
-			Bone.PoseLocation = ParentBone.PoseLocation;
-			Bone.PoseRotation = ParentBone.PoseRotation;
-			Bone.PoseScale = ParentBone.PoseScale;
-		}
-		else
-		{
-			Bone.PoseLocation = FMath::Lerp(RealParent.PoseLocation, RealChild.PoseLocation, Bone.InterBoneAlpha);
-			Bone.PoseRotation = FQuat::Slerp(RealParent.PoseRotation, RealChild.PoseRotation, Bone.InterBoneAlpha);
-			Bone.PoseScale = FMath::Lerp(RealParent.PoseScale, RealChild.PoseScale, Bone.InterBoneAlpha);
-		}
+		UpdateInterBoneDummyPose(Bone, BoneContainer);
 	}
 }
 
