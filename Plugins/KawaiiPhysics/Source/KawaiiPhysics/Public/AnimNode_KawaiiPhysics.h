@@ -729,6 +729,11 @@ private:
 	// ポーズ補間用：前フレームのポーズ目標が有効か（初回/リセット後は現在値で初期化）
 	// Pose interpolation: whether the previous-frame pose target is valid (init to current on first frame / after reset)
 	bool bSubstepPoseInitialized = false;
+	// このフレームで消費した実時間割合(0..1)。PreSkelCompTransform をこの割合だけ前進させ、未消費の
+	// component 移動を次にステップが走るフレームへ繰り越す（NumSteps==0 では0で据え置き）。legacy/teleport時は1。
+	// Fraction of elapsed real time consumed this frame (0..1). PreSkelCompTransform advances by this fraction so
+	// unconsumed component movement carries to the next stepping frame (0 holds it when NumSteps==0). 1 for legacy/teleport.
+	float PreSkelCompTransformConsumeFraction = 1.0f;
 
 #if WITH_EDITORONLY_DATA
 	bool bEditing = false;

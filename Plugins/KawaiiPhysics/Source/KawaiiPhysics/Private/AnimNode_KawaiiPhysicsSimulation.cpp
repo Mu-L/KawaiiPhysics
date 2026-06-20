@@ -202,20 +202,32 @@ void FAnimNode_KawaiiPhysics::SimulateModifyBones(FComponentSpacePoseContext& Ou
 		bInSubstep = false;
 		SimulateOnce(Output, ComponentTransform, Scene, SkelComp);
 		DeltaTimeOld = DeltaTime;
+		PreSkelCompTransformConsumeFraction = 1.0f; // legacyは毎フレーム全消費 / legacy consumes the whole frame
 	}
 	else
 	{
 		// ===== 固定タイムステップ・サブステップ（§4） =====
 		const float FixedDt = 1.0f / GetEffectiveTargetFramerate();
-		SubstepAccumulator += FrameDeltaTime;
+		// SkelCompMove は前回 PreSkelCompTransform 前進時からの全移動で、クランプ前の蓄積実時間 RawElapsed を表す。
+		// SkelCompMove is the full movement since the last PreSkelCompTransform advance, representing the pre-clamp RawElapsed.
+		const float RawElapsed = FMath::Max(SubstepAccumulator + FrameDeltaTime, KINDA_SMALL_NUMBER);
 		// spiral of death 防止：超過分は破棄 / clamp to avoid spiral of death (drop excess time)
-		SubstepAccumulator = FMath::Min(SubstepAccumulator, MaxSubstepsCached * FixedDt);
+		SubstepAccumulator = FMath::Min(RawElapsed, MaxSubstepsCached * FixedDt);
+		const float DroppedTime = RawElapsed - SubstepAccumulator; // クランプで破棄された時間 / time dropped by the clamp
 		const int32 NumSteps = FMath::FloorToInt(SubstepAccumulator / FixedDt);
 		SubstepAccumulator -= NumSteps * FixedDt;
 
-		// world移動を各サブステップへ分配（並進=線形分配、回転=増分割合のSlerp）。§7-D
-		// Distribute world movement across substeps (translation linear, rotation incremental fraction).
-		const float MoveFrac = (FrameDeltaTime > KINDA_SMALL_NUMBER) ? (FixedDt / FrameDeltaTime) : 1.0f;
+		// world移動を各サブステップへ分配。分配係数は RawElapsed 基準にし、ステップ未消費(NumSteps==0)を跨いでも
+		// 取りこぼし/二重適用しない。各ステップ FixedDt/RawElapsed を適用するので合計は消費割合分のみ。
+		// Distribute world movement; the fraction is relative to RawElapsed so movement is neither dropped nor
+		// double-applied across NumSteps==0 frames. Each step applies FixedDt/RawElapsed, so the total is the consumed share.
+		const float MoveFrac = FixedDt / RawElapsed;
+		// PreSkelCompTransform を「消費(NumSteps*FixedDt)＋破棄(DroppedTime)」割合だけ前進させ、残り(Remainder)を繰り越す。
+		// クランプ時は破棄分の component 移動も「未消費として復活」させない（超過分は破棄と整合）。
+		// Advance PreSkelCompTransform by the consumed+dropped fraction, carrying only the remainder. On clamp, the
+		// dropped component movement is not revived later (consistent with dropping the excess time).
+		PreSkelCompTransformConsumeFraction =
+			FMath::Clamp((NumSteps * FixedDt + DroppedTime) / RawElapsed, 0.0f, 1.0f);
 		const FVector FullSkelCompMove = SkelCompMoveVector;
 		const FQuat FullSkelCompRot = SkelCompMoveRotation;
 

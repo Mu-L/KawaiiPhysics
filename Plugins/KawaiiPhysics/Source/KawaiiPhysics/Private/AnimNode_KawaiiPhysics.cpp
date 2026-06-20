@@ -636,6 +636,9 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		// On teleport, flush unconsumed substep time and re-seed pose interpolation next frame
 		SubstepAccumulator = 0.0f;
 		bSubstepPoseInitialized = false;
+		// テレポート後は PreSkelCompTransform を現在へ全消費で進める（繰り越し無し）
+		// After teleport, fully advance PreSkelCompTransform to the current transform (no carry-over)
+		PreSkelCompTransformConsumeFraction = 1.0f;
 	}
 	else
 	{
@@ -651,7 +654,24 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	ApplySimulateResult(Output, BoneContainer, OutBoneTransforms);
 
 	TeleportType = ETeleportType::None;
-	PreSkelCompTransform = ComponentTransform;
+	// サブステップで未消費の実時間がある場合、PreSkelCompTransform を消費割合だけ前進させ、未適用の
+	// component 移動を次にステップが走るフレームへ繰り越す（NumSteps==0 では割合0で据え置き）。
+	// Advance PreSkelCompTransform by the consumed fraction so unapplied component movement carries to the next
+	// stepping frame (fraction 0 holds it when NumSteps==0).
+	const float PreSkelCompConsumeFrac = FMath::Clamp(PreSkelCompTransformConsumeFraction, 0.0f, 1.0f);
+	if (PreSkelCompConsumeFrac >= 1.0f - KINDA_SMALL_NUMBER)
+	{
+		PreSkelCompTransform = ComponentTransform;
+	}
+	else
+	{
+		PreSkelCompTransform.SetLocation(
+			FMath::Lerp(PreSkelCompTransform.GetLocation(), ComponentTransform.GetLocation(), PreSkelCompConsumeFrac));
+		PreSkelCompTransform.SetRotation(
+			FQuat::Slerp(PreSkelCompTransform.GetRotation(), ComponentTransform.GetRotation(), PreSkelCompConsumeFrac).GetNormalized());
+		PreSkelCompTransform.SetScale3D(
+			FMath::Lerp(PreSkelCompTransform.GetScale3D(), ComponentTransform.GetScale3D(), PreSkelCompConsumeFrac));
+	}
 
 #if ENABLE_ANIM_DEBUG
 
