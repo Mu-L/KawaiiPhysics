@@ -90,7 +90,7 @@ struct KAWAIIPHYSICS_API FKawaiiPhysicsSettings
 
 	/** 
 	* 剛性度：値が大きいほど、元の形状を維持
-	* Stiffness of physical behavior.As the value is larger, pre-physics shape is more respected
+	* Stiffness of physical behavior. As the value is larger, pre-physics shape is more respected
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0"), category = "KawaiiPhysics")
 	float Stiffness = 0.05f;
@@ -123,7 +123,7 @@ struct KAWAIIPHYSICS_API FKawaiiPhysicsSettings
 
 	/** 
 	* 物理挙動による回転制限。適切に設定することで荒ぶりを抑制
-	* Rotational limitations in physical behavior. Setting the value properly can prevent rampage
+	* Rotational limitations in physical behavior. Setting the value properly can suppress excessive shaking
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0"), category = "KawaiiPhysics")
 	float LimitAngle = 0.0f;

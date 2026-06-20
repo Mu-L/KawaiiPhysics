@@ -46,7 +46,8 @@ struct FKawaiiPhysicsReference : public FAnimNodeReference
 };
 
 /**
- * Exposes operations to be performed on a blend space anim node.
+ * KawaiiPhysics アニメーションノードに対する Blueprint 操作を公開する関数ライブラリ。
+ * Blueprint function library exposing operations on a KawaiiPhysics anim node.
  */
 UCLASS()
 class KAWAIIPHYSICS_API UKawaiiPhysicsLibrary : public UBlueprintFunctionLibrary

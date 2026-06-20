@@ -319,31 +319,44 @@ int32 FAnimNode_KawaiiPhysics::InsertInterBoneDummyBonesCore(TArray<FKawaiiPhysi
 		return EffectiveParentIndex;
 	}
 
-	int32 EffectiveCount;
-	if (bBoneSubdivisionCollisionOnly)
+	// 最小配置数 = 指定数。bBoneSubdivisionCollisionOnly は積分挙動のみに作用し、配置数には影響しない。
+	// 0距離区間（座標が重なる実ボーン間）はダミーが同一点に乗るだけなので 0。
+	// Minimum count = the requested count. bBoneSubdivisionCollisionOnly only affects integration behavior, not the count.
+	// Zero-length segments (coincident real bones) get 0 since dummies would land on the same point.
+	int32 EffectiveCount = (Distance > KINDA_SMALL_NUMBER) ? FMath::Clamp(BoneSubdivisionCount, 0, 10) : 0;
+
+	// bBoneSubdivisionDensifyByRadius: 半径に対しボーン間が離れた区間では、コリジョン球が隙間なく並ぶよう
+	// BoneSubdivisionCount を最小として追加配置する（coverage確保）。近接区間は最小のまま。
+	// When enabled, add dummies (using BoneSubdivisionCount as a floor) so collision spheres cover the gap where
+	// bones are far apart relative to their radius. Close segments keep the minimum.
+	if (bBoneSubdivisionDensifyByRadius && Distance > KINDA_SMALL_NUMBER)
 	{
-		// コリジョン専用モード: ダミーは速度積分せず、dummy同士の相互衝突も無く、実ボーン間のLerpで
-		// 位置決めされるキネマティックな衝突点。半径間引きの主目的だったsolver jitter対策が不要なため、
-		// BoneConstraintSubdivisionと同様に指定数をそのまま配置する（CalcInterBoneDummyCountは使わない）。
-		// Collision-only: dummies are kinematic (no velocity integration, no dummy-vs-dummy collision, lerped
-		// between real bones). The radius culling existed to avoid solver jitter, which doesn't apply here, so
-		// place exactly the requested count like BoneConstraintSubdivision (no CalcInterBoneDummyCount).
-		EffectiveCount = (Distance > KINDA_SMALL_NUMBER) ? FMath::Clamp(BoneSubdivisionCount, 0, 10) : 0;
-	}
-	else
-	{
-		// 物理シミュレーション対象: コリジョンスフィアの重なりによる不安定化を避けるため半径で制限（現状維持）。
-		// Simulated: limit count by radius to avoid instability from overlapping collision spheres (unchanged).
-		float MaxRadiusCurveScale = 1.0f;
+		// 被覆は最も小さい半径に合わせる必要がある（小さい球ほど隙間ができやすい）ため、RadiusCurveの最小スケールで
+		// 実効半径を見積もる（過少配置=隙間より、過剰配置=安全側に倒す）。挿入時点では各ボーンのLengthRateFromRootが
+		// 未確定のため、区間個別ではなくカーブ全体の最小で保守的に評価する。
+		// Coverage must match the smallest radius (smaller spheres leave gaps more easily), so estimate the effective
+		// radius from the curve's minimum scale (bias toward over-placing rather than leaving gaps). Per-bone
+		// LengthRateFromRoot isn't computed yet at insertion time, so evaluate conservatively over the whole curve.
+		// 一定間隔サンプルだとキー位置の狭い谷を見落とすため、両端の評価値に加えて領域[0,1]内の全カーブキー値を走査する。
+		// Uniform sampling can miss a narrow valley at a key, so scan both endpoints plus every curve key value within [0,1].
 		const FRichCurve* RadiusCurve = RadiusCurveData.GetRichCurveConst();
-		for (int32 SampleIndex = 0; SampleIndex <= 10; ++SampleIndex)
+		float MinRadiusCurveScale = FMath::Min(RadiusCurve->Eval(0.0f, 1.0f), RadiusCurve->Eval(1.0f, 1.0f));
+		for (const FRichCurveKey& Key : RadiusCurve->Keys)
 		{
-			const float LengthRate = static_cast<float>(SampleIndex) / 10.0f;
-			MaxRadiusCurveScale = FMath::Max(MaxRadiusCurveScale, RadiusCurve->Eval(LengthRate, 1.0f));
+			if (Key.Time >= 0.0f && Key.Time <= 1.0f)
+			{
+				MinRadiusCurveScale = FMath::Min(MinRadiusCurveScale, Key.Value);
+			}
 		}
-		const float AvgRadius = PhysicsSettings.Radius * FMath::Max(MaxRadiusCurveScale, 0.0f);
-		EffectiveCount = CalcInterBoneDummyCount(Distance, BoneSubdivisionCount, AvgRadius);
+		const float AvgRadius = PhysicsSettings.Radius * FMath::Max(MinRadiusCurveScale, 0.0f);
+
+		const int32 CoverageCount = CalcInterBoneDummyCoverageCount(Distance, AvgRadius);
+		EffectiveCount = FMath::Max(EffectiveCount, CoverageCount);
 	}
+
+	// 暴走防止の上限（半径が極端に小さい場合の過剰生成を抑える）。/ Safety cap (guards against a tiny radius blowing up the count).
+	constexpr int32 MaxInterBoneSubdivisionPerSegment = 50;
+	EffectiveCount = FMath::Min(EffectiveCount, MaxInterBoneSubdivisionPerSegment);
 
 	const FVector ParentLocation = InModifyBones[ParentModifyBoneIndex].Location;
 	const FQuat ParentRotation = InModifyBones[ParentModifyBoneIndex].PrevRotation;
@@ -606,23 +619,18 @@ void FAnimNode_KawaiiPhysics::UpdateSkelCompMove(FComponentSpacePoseContext& Out
 	}
 }
 
-int32 FAnimNode_KawaiiPhysics::CalcInterBoneDummyCount(float Distance, int32 RequestedCount, float AvgRadius) const
+int32 FAnimNode_KawaiiPhysics::CalcInterBoneDummyCoverageCount(float Distance, float AvgRadius) const
 {
-	const int32 ClampedRequestedCount = FMath::Clamp(RequestedCount, 0, 10);
-	if (ClampedRequestedCount <= 0 || Distance <= KINDA_SMALL_NUMBER)
+	if (Distance <= KINDA_SMALL_NUMBER || AvgRadius <= KINDA_SMALL_NUMBER)
 	{
 		return 0;
 	}
 
-	if (AvgRadius <= KINDA_SMALL_NUMBER)
-	{
-		return ClampedRequestedCount;
-	}
+	// N個のDummyBone → (N+1)セグメント。各セグメント長 <= 2*AvgRadius なら隣接コリジョン球が重なり隙間なく被覆。
+	// Distance / (N+1) <= 2*AvgRadius → N+1 >= Distance/(2*AvgRadius) → N >= Distance/(2*AvgRadius) - 1
+	// N coverage dummies → (N+1) segments; each <= 2*AvgRadius means adjacent spheres overlap and leave no gap.
+	const int32 CoverageCount = FMath::CeilToInt(Distance / (2.0f * AvgRadius)) - 1;
 
-	// N個のDummyBone → (N+1)セグメント。各セグメント >= 2*AvgRadius で重ならない
-	// Distance / (N+1) >= 2*AvgRadius → N <= Distance/(2*AvgRadius) - 1
-	const int32 MaxCount = FMath::Max(FMath::FloorToInt(Distance / (2.0f * AvgRadius)) - 1, 0);
-
-	return FMath::Min(ClampedRequestedCount, MaxCount);
+	return FMath::Max(CoverageCount, 0);
 }
 

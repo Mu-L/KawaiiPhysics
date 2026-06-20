@@ -139,7 +139,8 @@ struct FPlanarLimitData : public FCollisionLimitDataBase
 };
 
 /**
- * 
+ * コリジョン Limit（球/カプセル/ボックス/平面）をまとめて定義し、複数の KawaiiPhysics ノードで流用するための DataAsset。
+ * DataAsset that defines collision limits (sphere/capsule/box/planar) for reuse across multiple KawaiiPhysics nodes.
  */
 UCLASS(Blueprintable)
 class KAWAIIPHYSICS_API UKawaiiPhysicsLimitsDataAsset : public UDataAsset, public IBoneReferenceSkeletonProvider

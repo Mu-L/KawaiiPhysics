@@ -18,13 +18,9 @@ class KAWAIIPHYSICS_API UKawaiiPhysicsDeveloperSettings : public UDeveloperSetti
 public:
 	/**
 	* シミュレーション全体を固定タイムステップ（FixedDt = 1/TargetFramerate）でサブステップ実行し、
-	* 真にフレームレート非依存にする。既定OFF=従来挙動（後方互換）。
-	* ONにすると、減衰・重力・Stiffness・コリジョン・拘束のすべてが異なるフレームレート
-	* （15/30/60/120fps等）でほぼ一定の挙動になる（低fps時はサブステップ数が増え負荷が上がる）。
+	* フレームレート依存の挙動を解消する。（低fps時はサブステップ数が増え負荷が上がる）。
 	* Run the whole simulation with fixed-timestep substepping (FixedDt = 1/TargetFramerate) for true
-	* frame-rate independence. Default OFF keeps the legacy behavior (backward compatible). When ON,
-	* damping/gravity/stiffness/collision/constraints all behave consistently across frame rates
-	* (CPU cost rises at low fps as substep count grows).
+	* frame-rate independence (CPU cost rises at low fps as substep count grows).
 	*/
 	UPROPERTY(EditAnywhere, config, Category = "Simulation",
 		meta = (DisplayName = "Use Fixed Substepping"))
