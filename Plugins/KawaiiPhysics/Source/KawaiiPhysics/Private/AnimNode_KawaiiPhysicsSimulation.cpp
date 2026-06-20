@@ -461,12 +461,15 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 		// Accumulate per-endpoint weighted push and total weight, then divide by max(1, total weight).
 		// When few dummies contribute (weight <= 1, typical localized contact) this equals plain additive transfer;
 		// only when many dummies push the same endpoint does it average out, preventing N-fold overshoot/oscillation.
-		TMap<int32, FVector> AccumPush;
-		TMap<int32, float> AccumWeight;
-		// 端点インデックスは最大でもModifyBones数。事前確保で毎フレームの再ハッシュを回避
-		// Endpoint indices are bounded by ModifyBones count; reserve to avoid per-frame rehashing
-		AccumPush.Reserve(ModifyBones.Num());
-		AccumWeight.Reserve(ModifyBones.Num());
+		// 端点index直アクセスのスクラッチ配列（端点indexはModifyBones数で上限）。Reset+SetNumZeroedで
+		// 既存allocationを再利用しつつ全要素ゼロ化（TMapの確保・ハッシュをホットパスから排除）。
+		// Scratch arrays indexed directly by endpoint index (bounded by ModifyBones count). Reset + SetNumZeroed
+		// reuses the existing allocation while zeroing all elements (removes the TMap alloc/hash from the hot path).
+		const int32 NumBones = ModifyBones.Num();
+		BridgeFeedbackPushScratch.Reset();
+		BridgeFeedbackPushScratch.SetNumZeroed(NumBones);
+		BridgeFeedbackWeightScratch.Reset();
+		BridgeFeedbackWeightScratch.SetNumZeroed(NumBones);
 
 		for (const FKawaiiPhysicsModifyBone& Bone : ModifyBones)
 		{
@@ -492,18 +495,19 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 			const float W1 = 1.0f - A; // 端点1に近いほど寄与大 / closer to endpoint1 => larger weight
 			const float W2 = A;
 
-			AccumPush.FindOrAdd(E1) += Push * W1;
-			AccumWeight.FindOrAdd(E1) += W1;
-			AccumPush.FindOrAdd(E2) += Push * W2;
-			AccumWeight.FindOrAdd(E2) += W2;
+			BridgeFeedbackPushScratch[E1] += Push * W1;
+			BridgeFeedbackWeightScratch[E1] += W1;
+			BridgeFeedbackPushScratch[E2] += Push * W2;
+			BridgeFeedbackWeightScratch[E2] += W2;
 		}
 
-		for (const TPair<int32, FVector>& Entry : AccumPush)
+		for (int32 EndpointIdx = 0; EndpointIdx < NumBones; ++EndpointIdx)
 		{
-			if (ModifyBones.IsValidIndex(Entry.Key))
+			const float W = BridgeFeedbackWeightScratch[EndpointIdx];
+			if (W > 0.0f)
 			{
-				const float W = AccumWeight.FindChecked(Entry.Key);
-				ModifyBones[Entry.Key].Location += (Entry.Value / FMath::Max(1.0f, W)) * BoneConstraintSubdivisionFeedbackScale;
+				ModifyBones[EndpointIdx].Location +=
+					(BridgeFeedbackPushScratch[EndpointIdx] / FMath::Max(1.0f, W)) * BoneConstraintSubdivisionFeedbackScale;
 			}
 		}
 	}

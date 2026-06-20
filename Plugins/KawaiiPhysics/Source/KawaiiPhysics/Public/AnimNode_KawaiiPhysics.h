@@ -703,6 +703,12 @@ private:
 	// スイープ結果のスクラッチ（フレーム間でcapacityを再利用） / Sweep-result scratch (reuses capacity across frames)
 	TArray<FHitResult> WorldCollisionHitsScratch;
 
+	// bridge dummy feedback の集計スクラッチ（端点index→押し出し/重み）。SimulateOnce毎のTMap確保を避け、
+	// フレーム間でcapacityを再利用する。 / Bridge-dummy feedback accumulation scratch (endpoint index -> push/weight);
+	// avoids the per-SimulateOnce TMap allocation and reuses capacity across frames.
+	TArray<FVector> BridgeFeedbackPushScratch;
+	TArray<float> BridgeFeedbackWeightScratch;
+
 	/**
 	* Stores the delta time from the previous frame.
 	*/
