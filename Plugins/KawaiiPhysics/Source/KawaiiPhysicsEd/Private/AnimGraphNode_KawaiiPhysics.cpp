@@ -145,6 +145,7 @@ void UAnimGraphNode_KawaiiPhysics::CopyNodeDataToPreviewNode(FAnimNode_Base* Ani
 	KawaiiPhysics->DummyBoneLength = Node.DummyBoneLength;
 	KawaiiPhysics->BoneSubdivisionCount = Node.BoneSubdivisionCount;
 	KawaiiPhysics->bBoneSubdivisionCollisionOnly = Node.bBoneSubdivisionCollisionOnly;
+	KawaiiPhysics->bBoneSubdivisionDensifyByRadius = Node.bBoneSubdivisionDensifyByRadius;
 	KawaiiPhysics->BoneConstraintSubdivisionCount = Node.BoneConstraintSubdivisionCount;
 	KawaiiPhysics->BoneConstraintSubdivisionFeedbackScale = Node.BoneConstraintSubdivisionFeedbackScale;
 	KawaiiPhysics->BoneForwardAxis = Node.BoneForwardAxis;

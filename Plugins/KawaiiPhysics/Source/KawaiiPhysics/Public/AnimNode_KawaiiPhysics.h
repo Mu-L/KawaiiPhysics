@@ -75,25 +75,34 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	float DummyBoneLength = 0.0f;
 
 	/**
-	* 隣接するボーン間に挿入するダミーボーンの分割数。コリジョン検出の精度を向上させる（例: スカートの足貫通防止）
-	* Number of DummyBone subdivisions to insert between adjacent physics bones.
-	* Improves collision detection (e.g., prevents skirts from penetrating legs).
-	* Set to 0 to disable.
-	* CollisionOnly=false のときのみボーン間隔と半径で数が自動補正される（重なり不安定化の防止）。CollisionOnly=true は指定数をそのまま配置。
-	* Auto-corrected by bone spacing and radius only when CollisionOnly is false; placed as-is when CollisionOnly is true.
+	* 隣接するボーン間に挿入するダミーボーンの最小分割数。コリジョン検出の精度を向上させる（例: スカートの足貫通防止）。0で無効。
+	* bBoneSubdivisionDensifyByRadius が有効なときは、これを最小として半径に応じ追加配置される。
+	* Minimum number of DummyBone subdivisions to insert between adjacent physics bones.
+	* Improves collision detection (e.g., prevents skirts from penetrating legs). Set to 0 to disable.
+	* When bBoneSubdivisionDensifyByRadius is enabled, this acts as a floor and more are added based on radius.
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bones|Bone Subdivision", meta = (PinHiddenByDefault, ClampMin = "0", ClampMax = "10"))
 	int32 BoneSubdivisionCount = 0;
 
 	/**
-	* ボーン間ダミーボーンの速度積分（重力・風など）をスキップし、実ボーン間の補間位置からコリジョン・制約に参加
-	* When true, inter-bone dummy bones skip velocity integration (gravity/wind/etc.) and still participate in collision and constraints from interpolated positions.
-	* true=半径間引きせず指定数をそのまま配置 / false=重なり不安定化を防ぐため半径で配置数を間引く
-	* true: places the requested count as-is (no radius culling). false: culls the count by radius to avoid overlap instability.
+	* ボーン間ダミーボーンの速度積分（重力・風など）をスキップし、実ボーン間の補間位置からコリジョン・制約に参加（配置数には影響しない）。
+	* When true, inter-bone dummy bones skip velocity integration (gravity/wind/etc.) and participate in collision and constraints from interpolated positions. Does not affect the number of dummies.
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bones|Bone Subdivision",
 		meta = (PinHiddenByDefault, EditCondition = "BoneSubdivisionCount > 0"))
 	bool bBoneSubdivisionCollisionOnly = true;
+
+	/**
+	* 半径に応じてダミーを追加配置し、コリジョン球でボーン間を概ね隙間なく被覆する。BoneSubdivisionCount を最小として、
+	* ボーン間が半径に対して離れている区間ほど多く配置する（近接区間は最小のまま。1区間あたり最大50本）。
+	* 有効中に Radius / RadiusCurve を変更した場合、ダミー数の再計算には再初期化（ABP再コンパイル等）が必要なことがある。
+	* Add dummies based on radius so collision spheres roughly cover the gap between bones. Uses BoneSubdivisionCount as the
+	* minimum and places more where bones are far apart relative to their radius (close segments keep the minimum; up to 50 per segment).
+	* While enabled, changing Radius / RadiusCurve may need a re-init (e.g. recompiling the ABP) for the dummy count to update.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bones|Bone Subdivision",
+		meta = (PinHiddenByDefault, EditCondition = "BoneSubdivisionCount > 0"))
+	bool bBoneSubdivisionDensifyByRadius = false;
 
 	/**
 	* 横方向BoneConstraintに沿って挿入するコリジョン代理ダミーの分割数。隣接チェーン（列）間の隙間をコリジョン点で埋めて貫通を防ぐ。
@@ -316,8 +325,8 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	TObjectPtr<UKawaiiPhysicsLimitsDataAsset> LimitsDataAsset = nullptr;
 
 	/** 
-	* コリジョン設定（PhyiscsAsset版）。別AnimNode・ABPで設定を流用したい場合はこちらを推奨
-	* Collision settings (PhyiscsAsset版 version). This is recommended if you want to reuse the settings for another AnimNode or ABP.
+	* コリジョン設定（PhysicsAsset版）。別AnimNode・ABPで設定を流用したい場合はこちらを推奨
+	* Collision settings (PhysicsAsset). This is recommended if you want to reuse the settings for another AnimNode or ABP.
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits", meta = (PinHiddenByDefault))
 	TObjectPtr<UPhysicsAsset> PhysicsAssetForLimits = nullptr;
@@ -467,10 +476,8 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force", meta = (PinHiddenByDefault))
 	bool bUseDefaultGravityZProjectSetting = false;
 
-	// 
 	// 重力をワールド座標系で扱うかどうかのフラグ
 	// Flag to handle gravity in world coordinate system
-	//
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Force", meta = (PinHiddenByDefault))
 	bool bUseWorldSpaceGravity = true;
 
@@ -516,10 +523,9 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	TArray<FInstancedStruct> ExternalForces;
 
 	/**
-	* !!! VERY VERY EXPERIMENTAL !!!
-	* 外力のプリセット。BP・C++で独自のプリセットを追加可能(Instanced Property)
+	* EXPERIMENTAL: 外力のプリセット。BP・C++で独自のプリセットを追加可能(Instanced Property)
 	* 注意：AnimNodeをクリック or ABPをコンパイルしないと正常に動作しません
-	* External force presets. You can add your own presets in BP or C++
+	* External force presets (experimental). You can add your own presets in BP or C++.
 	* Note: If you do not click on AnimNode or compile ABP, it will not work properly.
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Instanced, Category = "Force|External Force",
@@ -587,10 +593,10 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 
 private:
 	/**
-	* ボーン間のスペースとRadiusに基づき、挿入可能なダミーボーン数を計算（自動補正）
-	* Calculates the effective number of inter-bone dummy bones, auto-corrected based on spacing and radius.
+	* コリジョン球がボーン間の隙間を埋めるのに必要なダミーボーン数（半径ベースの被覆数）を計算。
+	* Calculates how many inter-bone dummy bones are needed so collision spheres cover the gap (radius-based coverage count).
 	*/
-	int32 CalcInterBoneDummyCount(float Distance, int32 RequestedCount, float AvgRadius) const;
+	int32 CalcInterBoneDummyCoverageCount(float Distance, float AvgRadius) const;
 
 	/**
 	* Inserts inter-bone dummy bones before recursively adding the real child bone.
@@ -1256,9 +1262,12 @@ private:
 	bool bModifyBonesNeedsReinit = false;
 	int32 LastInitializedBoneSubdivisionCount = 0;
 	int32 LastInitializedBoneConstraintSubdivisionCount = 0;
-	// CollisionOnlyは配置数（生成トポロジ）を左右するため再構築判定に含める。既定値はプロパティのデフォルトに合わせる
-	// CollisionOnly affects the placed dummy count (generation topology), so it's part of the reinit check. Default matches the property.
-	bool LastInitializedBoneSubdivisionCollisionOnly = true;
+	// DensifyByRadiusは配置数（生成トポロジ）を左右するため再構築判定に含める。既定値はプロパティのデフォルトに合わせる
+	// DensifyByRadius affects the placed dummy count (generation topology), so it's part of the reinit check. Default matches the property.
+	bool LastInitializedBoneSubdivisionDensifyByRadius = false;
+	// Densify=true 時のみ、node Radius 変更でダミー数を再構築するため追跡（RadiusCurveの変更は別途再init要）
+	// Tracked to rebuild the dummy count when the node Radius changes while Densify is on (RadiusCurve edits still need a separate re-init).
+	float LastInitializedRadius = 0.0f;
 	float LastInitializedDummyBoneLength = 0.0f;
 
 	// SimulationSpace conversion cache (per-evaluation)

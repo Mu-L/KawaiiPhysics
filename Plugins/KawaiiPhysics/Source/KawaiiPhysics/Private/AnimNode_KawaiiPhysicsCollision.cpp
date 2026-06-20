@@ -887,9 +887,9 @@ void FAnimNode_KawaiiPhysics::InsertBridgeDummiesForConstraints()
 		const float R2 = PhysicsSettings.Radius * FMath::Max(RadiusCurve->Eval(LR2, 1.0f), 0.0f);
 
 		// コリジョン被覆用: 端点スフィアが既に重なる(Dist<=R1+R2)なら隙間が無いのでセンサー不要。
-		// それ以外は指定数をそのまま使う（被覆には重なりが必要なので縦のCalcInterBoneDummyCountは使わない）。
+		// それ以外は指定数をそのまま使う（被覆には重なりが必要なので半径による間引きはしない）。
 		// Coverage: if the endpoint spheres already overlap (Dist <= R1+R2) there is no gap -> no sensors.
-		// Otherwise use the requested count directly (coverage needs overlap; not CalcInterBoneDummyCount).
+		// Otherwise use the requested count directly (coverage needs overlap; no radius-based culling here).
 		if (Dist <= FMath::Max(R1 + R2, KINDA_SMALL_NUMBER))
 		{
 			continue;
