@@ -28,7 +28,7 @@ public:
 	*/
 	UPROPERTY(EditAnywhere, config, Category = "Simulation",
 		meta = (DisplayName = "Use Fixed Substepping"))
-	bool bUseFixedSubstepping = true;
+	bool bUseFixedSubstepping = false;
 
 	/**
 	* 1フレームあたりの最大サブステップ数。低fps/ヒッチ時の暴走（spiral of death）を防ぐ上限。
