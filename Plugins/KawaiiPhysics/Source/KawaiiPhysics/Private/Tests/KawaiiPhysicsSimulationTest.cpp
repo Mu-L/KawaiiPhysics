@@ -299,6 +299,77 @@ bool FKawaiiPhysicsSyncBoneSubdivisionPoseRefreshTest::RunTest(const FString& Pa
 }
 
 // ---------------------------------------------------------------------------
+//  SyncBone + BoneSubdivision: 子は stale inter-bone dummy 基準で歪まず剛体並進する
+//  (regression: SyncBone+Subdivision residual stretch — child constrained against not-yet-updated dummy parent)
+// ---------------------------------------------------------------------------
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsSyncBoneSubdivisionRigidTranslationTest,
+                                 "KawaiiPhysics.Simulation.SyncBoneSubdivisionRigidTranslation",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FKawaiiPhysicsSyncBoneSubdivisionRigidTranslationTest::RunTest(const FString& Parameters)
+{
+	FKawaiiPhysicsTestAccessor A;
+	A.BuildSyncBoneSubdivisionFixture();
+
+	// root(0) -> inter-bone dummy(1) -> real child(2)。root と child(2) を同一 delta で sync すると剛体並進になるはず。
+	// root(0) -> inter-bone dummy(1) -> real child(2). Syncing root and child(2) by the same delta must be a rigid translation.
+	FKawaiiPhysicsSyncTargetRoot TargetRoot = A.CollectSyncChildTargetsForRoot(0);
+
+	const FVector Delta(0.0f, 10.0f, 0.0f);
+	A.ApplySyncTargetsForRoot(TargetRoot, Delta);
+
+	const float Tol = 0.001f;
+	// root は ParentIndex<0 なので素直に並進 / root has no parent, plain translation
+	TestTrue(FString::Printf(TEXT("Root translates rigidly: %s"), *A.Bone(0).PoseLocation.ToString()),
+	         A.Bone(0).PoseLocation.Equals(FVector(0.0f, 10.0f, 0.0f), Tol));
+
+	// child(2) の親は inter-bone dummy(1)。修正前は stale dummy=(5,0,0) 基準の長さ拘束で約(7.236,4.472,0)へ歪む。
+	// 修正後は剛体並進 (10,10,0)。/ child(2)'s parent is inter-bone dummy(1). Before the fix the stale-dummy length
+	// constraint distorts it to ~(7.236,4.472,0); after the fix it translates rigidly to (10,10,0).
+	TestTrue(FString::Printf(TEXT("Subdivided real child translates rigidly (no stale-dummy distortion): %s"),
+	                         *A.Bone(2).PoseLocation.ToString()),
+	         A.Bone(2).PoseLocation.Equals(FVector(10.0f, 10.0f, 0.0f), Tol));
+
+	// 後段の dummy 再補間で inter-bone dummy も剛体並進位置へ戻る / the later re-interpolation restores the dummy too
+	A.CallUpdateSubdivisionDummyPoseAfterSyncBones();
+	TestTrue(FString::Printf(TEXT("Inter-bone dummy re-lerps to rigid position: %s"),
+	                         *A.Bone(1).PoseLocation.ToString()),
+	         A.Bone(1).PoseLocation.Equals(FVector(5.0f, 10.0f, 0.0f), Tol));
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+//  SyncBone + BoneSubdivision: 非剛体（root/child で delta が異なる）でも segment 長を保存
+//  (constrain against real grandparent at BoneLength/(1-alpha), not the stale inter-bone dummy)
+// ---------------------------------------------------------------------------
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsSyncBoneSubdivisionLengthPreservedTest,
+                                 "KawaiiPhysics.Simulation.SyncBoneSubdivisionLengthPreserved",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FKawaiiPhysicsSyncBoneSubdivisionLengthPreservedTest::RunTest(const FString& Parameters)
+{
+	FKawaiiPhysicsTestAccessor A;
+	A.BuildSyncBoneSubdivisionFixture();
+
+	FKawaiiPhysicsSyncTargetRoot TargetRoot = A.CollectSyncChildTargetsForRoot(0);
+
+	// root と child(2) に異なる delta（attenuation/curve 相当）。stale dummy 基準だと segment が伸縮するが、
+	// 実祖父 gp(=root) 基準・距離 BoneLength/(1-alpha)=10 の拘束で gp→child 長は保たれるはず。
+	// Different deltas for root vs child(2) (emulates attenuation/curve). Constraining against grandparent (root) at
+	// BoneLength/(1-alpha)=10 keeps the gp->child length even when the stale-dummy approach would stretch it.
+	A.ApplySyncTargetsForRootSplit(TargetRoot, FVector(0.0f, 10.0f, 0.0f), FVector(0.0f, 5.0f, 0.0f));
+
+	const float RestLen = 10.0f; // |child(10,0,0) - root(0,0,0)| = BoneLength(5) / (1 - alpha 0.5)
+	const float Len = FVector::Dist(A.Bone(2).PoseLocation, A.Bone(0).PoseLocation);
+	TestTrue(FString::Printf(TEXT("Non-rigid sync preserves grandparent->child length: %.4f (expect %.1f) child=%s"),
+	                         Len, RestLen, *A.Bone(2).PoseLocation.ToString()),
+	         FMath::IsNearlyEqual(Len, RestLen, 0.001f));
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------
 //  パラメータ応答 / Parameter response
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsParameterResponseTest,

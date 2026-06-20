@@ -43,11 +43,41 @@ void FKawaiiPhysicsSyncTarget::Apply(TArray<FKawaiiPhysicsModifyBone>& ModifyBon
 
 	if (Bone.ParentIndex >= 0)
 	{
-		// Maintain bone length relative to parent
-		const auto& ParentBone = ModifyBones[Bone.ParentIndex];
+		const FKawaiiPhysicsModifyBone& ParentBone = ModifyBones[Bone.ParentIndex];
 		const FVector NewPoseLocation = Bone.PoseLocation + ScaledTranslation;
-		Bone.PoseLocation = (NewPoseLocation - ParentBone.PoseLocation).GetSafeNormal() * Bone.BoneLength +
-			ParentBone.PoseLocation;
+		if (ParentBone.bInterBoneDummy)
+		{
+			// 即時親が inter-bone dummy の場合、その Pose は Apply ループ後の UpdateSubdivisionDummyPoseAfterSyncBones()
+			// まで stale。stale dummy を基準に長さ拘束すると剛体/非剛体とも歪む。
+			// dummy は実祖父 gp と本ボーン child を InterBoneAlpha で内分する点なので |child-dummy| = (1-alpha)*|child-gp|。
+			// よって実祖父 gp を基準に距離 BoneLength/(1-alpha) で拘束すれば、stale を使わず長さを正しく保存できる
+			// （root+child 同一 delta の剛体移動でも、attenuation/curve で delta が異なる非剛体でも segment 長を維持）。
+			// The immediate parent is an inter-bone dummy whose pose is stale until the post-apply re-interpolation.
+			// The dummy divides gp(real grandparent)..child by InterBoneAlpha, so |child-dummy| = (1-alpha)*|child-gp|.
+			// Constrain against gp at distance BoneLength/(1-alpha): preserves segment length without the stale dummy,
+			// for both rigid (root+child same delta) and non-rigid (attenuation/curve) sync.
+			const float OneMinusAlpha = 1.0f - ParentBone.InterBoneAlpha;
+			const int32 GrandParentIndex = ParentBone.InterBoneRealParentIndex;
+			if (OneMinusAlpha > KINDA_SMALL_NUMBER && ModifyBones.IsValidIndex(GrandParentIndex))
+			{
+				const FKawaiiPhysicsModifyBone& GrandParent = ModifyBones[GrandParentIndex];
+				const float TargetLength = Bone.BoneLength / OneMinusAlpha;
+				Bone.PoseLocation =
+					(NewPoseLocation - GrandParent.PoseLocation).GetSafeNormal() * TargetLength + GrandParent.PoseLocation;
+			}
+			else
+			{
+				// 退化(alpha≈1)・祖父無効時は並進のみ（長さは後段の再補間に委ねる）
+				// Degenerate (alpha≈1) or invalid grandparent: translate only (length handled by re-interpolation).
+				Bone.PoseLocation = NewPoseLocation;
+			}
+		}
+		else
+		{
+			// Maintain bone length relative to parent
+			Bone.PoseLocation = (NewPoseLocation - ParentBone.PoseLocation).GetSafeNormal() * Bone.BoneLength +
+				ParentBone.PoseLocation;
+		}
 	}
 	else
 	{

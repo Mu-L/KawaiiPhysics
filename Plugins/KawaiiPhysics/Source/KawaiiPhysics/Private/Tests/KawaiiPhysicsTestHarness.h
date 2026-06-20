@@ -370,6 +370,29 @@ struct FKawaiiPhysicsTestAccessor
 		return TargetRoot;
 	}
 
+	// ApplySyncBones の target 適用部（root → child targets）を Output 無しで再現。
+	// Replicates ApplySyncBones' target application (root then child targets) without Output.
+	void ApplySyncTargetsForRoot(FKawaiiPhysicsSyncTargetRoot& TargetRoot, const FVector& Translation)
+	{
+		TargetRoot.Apply(Node.ModifyBones, Translation);
+		for (FKawaiiPhysicsSyncTarget& Target : TargetRoot.ChildTargets)
+		{
+			Target.Apply(Node.ModifyBones, Translation);
+		}
+	}
+
+	// 非剛体ケース用：root と child で異なる translation（attenuation/curve相当）を適用。
+	// Non-rigid case: apply different translations to root vs child targets (emulates attenuation/curve).
+	void ApplySyncTargetsForRootSplit(FKawaiiPhysicsSyncTargetRoot& TargetRoot,
+	                                  const FVector& RootTranslation, const FVector& ChildTranslation)
+	{
+		TargetRoot.Apply(Node.ModifyBones, RootTranslation);
+		for (FKawaiiPhysicsSyncTarget& Target : TargetRoot.ChildTargets)
+		{
+			Target.Apply(Node.ModifyBones, ChildTranslation);
+		}
+	}
+
 	void CallUpdateSubdivisionDummyPoseAfterSyncBones()
 	{
 		// GetCompactPoseIndex は bUseSkeletonIndex=false 時 CachedCompactPoseIndex を返す（コンテナ非依存）ため空でよい。
