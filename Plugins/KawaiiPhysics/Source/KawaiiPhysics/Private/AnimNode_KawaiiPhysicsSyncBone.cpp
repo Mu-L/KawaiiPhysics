@@ -288,8 +288,11 @@ void FAnimNode_KawaiiPhysics::ApplySyncBones(FComponentSpacePoseContext& Output,
 		// Apply to Targets
 		for (auto& TargetRoot : SyncBone.TargetRoots)
 		{
-			// Update Alpha by Length Rate & Curve
-			// TODO : Need flag to optimize for skip updating Scale after InitSyncBone
+			// LengthRate curveによるScaleはInitSyncBone(CollectSyncBoneChildTargets)で計算済みのため、通常評価では
+			// 再計算しない。editorでは曲線のライブ編集に追従するため毎フレーム再計算する。
+			// The length-rate curve scale is computed at init (CollectSyncBoneChildTargets), so runtime evaluation
+			// skips it. In editor, recompute every frame to follow live curve edits.
+#if WITH_EDITOR
 			if (const FRichCurve* ScaleCurve = TargetRoot.ScaleCurveByBoneLengthRate.GetRichCurveConst();
 				ScaleCurve && !ScaleCurve->IsEmpty())
 			{
@@ -299,6 +302,7 @@ void FAnimNode_KawaiiPhysics::ApplySyncBones(FComponentSpacePoseContext& Output,
 					Target.UpdateScaleByLengthRate(ScaleCurve);
 				}
 			}
+#endif
 
 			// Root target
 			{
