@@ -6,6 +6,9 @@
 #include "KawaiiPhysicsBoneConstraintsDataAsset.h"
 #include "KawaiiPhysicsCustomExternalForce.h"
 #include "ExternalForces/KawaiiPhysicsExternalForce.h"
+#if !UE_BUILD_SHIPPING && WITH_EDITORONLY_DATA
+#include "KawaiiPhysicsDeveloperSettings.h"
+#endif
 #include "KawaiiPhysicsLimitsDataAsset.h"
 #include "KawaiiPhysicsSharedCollisionSubsystem.h"
 #include "Animation/AnimInstanceProxy.h"
@@ -532,29 +535,49 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		bModifyBonesNeedsReinit = false;
 		PreSkelCompTransform = ComponentTransform;
 
+#if !UE_BUILD_SHIPPING
 		// STAT更新 & パフォーマンス警告 / STAT update & performance warning
 		SET_DWORD_STAT(STAT_KawaiiPhysics_NumModifyBones, ModifyBones.Num());
 		int32 InterBoneDummyCount = 0;
 		int32 BridgeDummyCount = 0;
 		for (const auto& Bone : ModifyBones)
 		{
-			if (Bone.bInterBoneDummy) InterBoneDummyCount++;
-			if (Bone.bBridgeDummy) BridgeDummyCount++;
+			if (Bone.bInterBoneDummy)
+			{
+				InterBoneDummyCount++;
+			}
+			if (Bone.bBridgeDummy)
+			{
+				BridgeDummyCount++;
+			}
 		}
 		SET_DWORD_STAT(STAT_KawaiiPhysics_NumInterBoneDummyBones, InterBoneDummyCount);
 		SET_DWORD_STAT(STAT_KawaiiPhysics_NumBridgeDummyBones, BridgeDummyCount);
-		if (InterBoneDummyCount > 50)
+		
+#if WITH_EDITORONLY_DATA
+		int32 InterBoneDummyWarningThreshold = 100;
+		int32 BridgeDummyWarningThreshold = 200;
+
+		if (const UKawaiiPhysicsDeveloperSettings* KawaiiSettings = GetDefault<UKawaiiPhysicsDeveloperSettings>())
+		{
+			InterBoneDummyWarningThreshold = KawaiiSettings->InterBoneDummyWarningThreshold;
+			BridgeDummyWarningThreshold = KawaiiSettings->BridgeDummyWarningThreshold;
+		}
+
+		if (InterBoneDummyWarningThreshold > 0 && InterBoneDummyCount > InterBoneDummyWarningThreshold)
 		{
 			UE_LOG(LogAnimation, Warning,
-				TEXT("KawaiiPhysics: %d inter-bone dummy bones generated. This may impact performance. Consider reducing BoneSubdivisionCount."),
-				InterBoneDummyCount);
+				TEXT("KawaiiPhysics: %d inter-bone dummy bones generated (warning threshold: %d). This may impact performance. Consider reducing BoneSubdivisionCount or raising InterBoneDummyWarningThreshold in Kawaii Physics project settings."),
+				InterBoneDummyCount, InterBoneDummyWarningThreshold);
 		}
-		if (BridgeDummyCount > 100)
+		if (BridgeDummyWarningThreshold > 0 && BridgeDummyCount > BridgeDummyWarningThreshold)
 		{
 			UE_LOG(LogAnimation, Warning,
-				TEXT("KawaiiPhysics: %d bridge collision-proxy dummy bones and %d merged bone constraints generated. This may impact performance. Consider reducing BoneConstraintSubdivisionCount."),
-				BridgeDummyCount, MergedBoneConstraints.Num());
+				TEXT("KawaiiPhysics: %d bridge collision-proxy dummy bones and %d merged bone constraints generated (warning threshold: %d). This may impact performance. Consider reducing BoneConstraintSubdivisionCount or raising BridgeDummyWarningThreshold in Kawaii Physics project settings."),
+				BridgeDummyCount, MergedBoneConstraints.Num(), BridgeDummyWarningThreshold);
 		}
+#endif
+#endif
 
 	}
 
