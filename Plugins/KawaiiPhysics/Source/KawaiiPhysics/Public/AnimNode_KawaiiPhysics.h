@@ -6,9 +6,9 @@
 #include "BoneContainer.h"
 #include "BonePose.h"
 #include "GameplayTagContainer.h"
-
 #include "BoneControllers/AnimNode_AnimDynamics.h"
 #include "BoneControllers/AnimNode_SkeletalControlBase.h"
+#include "Engine/HitResult.h"
 
 #if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5
 #include "StructUtils/InstancedStruct.h"

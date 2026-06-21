@@ -4,6 +4,7 @@
 #include "KawaiiPhysicsBoneConstraintsDataAsset.h"
 
 #include "KawaiiPhysics.h"
+#include "Animation/Skeleton.h"
 #include "Internationalization/Regex.h"
 
 #if WITH_EDITOR

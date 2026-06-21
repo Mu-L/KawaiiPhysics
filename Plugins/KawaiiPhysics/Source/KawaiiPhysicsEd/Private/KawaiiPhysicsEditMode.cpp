@@ -5,6 +5,7 @@
 #include "CanvasTypes.h"
 #include "EditorModeManager.h"
 #include "EditorViewportClient.h"
+#include "Engine/Engine.h"
 #include "IPersonaPreviewScene.h"
 #include "KawaiiPhysics.h"
 #include "ExternalForces/KawaiiPhysicsExternalForce.h"
