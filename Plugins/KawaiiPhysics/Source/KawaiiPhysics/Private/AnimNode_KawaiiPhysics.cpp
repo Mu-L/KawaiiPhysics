@@ -98,6 +98,10 @@ TAutoConsoleVariable<int32> CVarSharedCollisionCleanupMaxAge(
 TAutoConsoleVariable<int32> CVarSharedCollisionInitRetryThreshold(
 	TEXT("a.AnimNode.KawaiiPhysics.SharedCollision.InitRetryThreshold"), 60,
 	TEXT("警告ログを出すまでの初期化リトライ回数 / Number of init retries before logging a warning."));
+TAutoConsoleVariable<int32> CVarSharedCollisionInitRetryThrottleInterval(
+	TEXT("a.AnimNode.KawaiiPhysics.SharedCollision.InitRetryThrottleInterval"), 60,
+	TEXT("警告しきい値到達後の再初期化リトライ間隔（フレーム）。誤設定タグでの毎フレーム再試行を間引く / "
+		"Retry interval (frames) after the warning threshold; throttles per-frame re-init for misconfigured tags."));
 TAutoConsoleVariable<float> CVarSharedCollisionCleanupInterval(
 	TEXT("a.AnimNode.KawaiiPhysics.SharedCollision.CleanupInterval"), 1.0f,
 	TEXT("クリーンアップ間隔（秒） / Cleanup interval in seconds."));
@@ -457,19 +461,36 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		// 初期化（未初期化時のみ。Subsystem側のロックでWorkerから安全に呼べる）
 		if (!bSharedCollisionInitialized)
 		{
-			InitializeSharedCollision();
+			const int32 RetryThreshold = CVarSharedCollisionInitRetryThreshold.GetValueOnAnyThread();
+			const int32 ThrottleInterval = FMath::Max(1, CVarSharedCollisionInitRetryThrottleInterval.GetValueOnAnyThread());
 
-			// 初期化リトライが続く場合に警告ログ（1回のみ）
-			if (!bSharedCollisionInitialized && !bSharedCollisionInitWarningLogged)
+			if (!bSharedCollisionInitWarningLogged)
 			{
-				SharedCollisionInitRetryCount++;
-				if (SharedCollisionInitRetryCount > CVarSharedCollisionInitRetryThreshold.GetValueOnAnyThread())
+				// 警告前: 毎フレーム試行（正常な起動ウィンドウでの即接続を維持）。しきい値到達で1回だけ警告し間引きへ移行
+				InitializeSharedCollision();
+				if (!bSharedCollisionInitialized)
 				{
-					KAWAII_LOG_NODE_WARNING(LogKawaiiPhysics,
-						TEXT("SharedCollision: Target could not find source entry for tag [%s]. "
-							"Ensure a source node with matching tag exists in the same actor/child-actor family."),
-						*SharedCollisionGroupTag.ToString());
-					bSharedCollisionInitWarningLogged = true;
+					SharedCollisionInitRetryCount++;
+					if (SharedCollisionInitRetryCount > RetryThreshold)
+					{
+						KAWAII_LOG_NODE_WARNING(LogKawaiiPhysics,
+							TEXT("SharedCollision: Target could not find source entry for tag [%s]. "
+								"Ensure a source node with matching tag exists in the same actor/child-actor family."),
+							*SharedCollisionGroupTag.ToString());
+						bSharedCollisionInitWarningLogged = true;
+						SharedCollisionInitRetryCount = 0; // 間引きフェーズ用にカウンタを0起点で再利用
+					}
+				}
+			}
+			else
+			{
+				// 警告後(Sourceが見つからない誤設定の可能性大): ThrottleInterval間隔で試行。カウンタは[0, ThrottleInterval]に
+				// 収まりオーバーフローしない。誤設定タグでの毎フレームのfamily-root walk/registry lock取得を削減しつつ、
+				// Sourceが後から現れた場合の接続は維持する（最大ThrottleInterval遅れ）。
+				if (++SharedCollisionInitRetryCount >= ThrottleInterval)
+				{
+					SharedCollisionInitRetryCount = 0;
+					InitializeSharedCollision();
 				}
 			}
 		}
@@ -594,8 +615,8 @@ void FAnimNode_KawaiiPhysics::OnInitializeAnimInstance(const FAnimInstanceProxy*
 {
 	FAnimNode_SkeletalControlBase::OnInitializeAnimInstance(InProxy, InAnimInstance);
 
-	// 共有コリジョン初期化で使うSubsystem/owner ActorをGameThreadで1回だけ解決してキャッシュする。
-	// （Evaluate(AnyThread)側でGetWorld/GetSubsystem/GetOwnerのUObjectナビゲーションを行わないため）
+	// 共有コリジョン初期化で使うSubsystemとowner ActorをGameThreadで1回だけ解決してキャッシュする。
+	// （Evaluate(AnyThread)でのGetWorld/GetSubsystem/GetOwner回避。ファミリーrootはアタッチ変更追従のためEvaluate側でownerから都度解決）
 	if (InAnimInstance)
 	{
 		if (const UWorld* World = InAnimInstance->GetWorld())
