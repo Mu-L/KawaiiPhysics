@@ -1033,6 +1033,13 @@ void FAnimNode_KawaiiPhysics::WriteSharedCollisionToSubsystem(
 		L.Plane = FPlane(L.Location, T.GetRotation().GetUpVector());
 	};
 
+	// 再割り当てを避けるため事前確保（無効分も含む上限。少量の過剰確保は許容）。
+	// Pre-reserve to avoid reallocations during append (upper bound incl. disabled entries; minor over-alloc is fine).
+	Data.SphericalLimits.Reserve(SphericalLimits.Num() + SphericalLimitsData.Num());
+	Data.CapsuleLimits.Reserve(CapsuleLimits.Num() + CapsuleLimitsData.Num());
+	Data.BoxLimits.Reserve(BoxLimits.Num() + BoxLimitsData.Num());
+	Data.PlanarLimits.Reserve(PlanarLimits.Num() + PlanarLimitsData.Num());
+
 	// 全コリジョンソースを収集 / Collect from all collision sources
 	ConvertAndAppend(SphericalLimits,     Data.SphericalLimits, NoOp);
 	ConvertAndAppend(SphericalLimitsData, Data.SphericalLimits, NoOp);
@@ -1043,7 +1050,7 @@ void FAnimNode_KawaiiPhysics::WriteSharedCollisionToSubsystem(
 	ConvertAndAppend(PlanarLimits,        Data.PlanarLimits,     RecomputePlane);
 	ConvertAndAppend(PlanarLimitsData,    Data.PlanarLimits,     RecomputePlane);
 
-	CachedSourceSlot->Publish(Data);
+	CachedSourceSlot->Publish(MoveTemp(Data));
 }
 
 void FAnimNode_KawaiiPhysics::UpdateSharedCollisionLimits(

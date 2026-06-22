@@ -48,12 +48,12 @@ namespace
 // FKawaiiPhysicsSharedCollisionSourceSlot
 // -------------------------------------------------------------------
 
-void FKawaiiPhysicsSharedCollisionSourceSlot::Publish(const FKawaiiPhysicsSharedCollisionData& Data)
+void FKawaiiPhysicsSharedCollisionSourceSlot::Publish(FKawaiiPhysicsSharedCollisionData Data)
 {
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_Publish);
 
 	FWriteScopeLock WriteLock(BufferLock);
-	Buffer = Data;
+	Buffer = MoveTemp(Data);
 
 	// フレーム番号を記録（鮮度チェック用） / Record frame number for expiration detection
 	LastPublishFrame.store(GFrameCounter, std::memory_order_release);

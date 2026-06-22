@@ -20,8 +20,13 @@
  */
 struct KAWAIIPHYSICS_API FKawaiiPhysicsSharedCollisionSourceSlot
 {
-	/** ワーカースレッドから呼び出し可能 / Can be called from any thread */
-	void Publish(const FKawaiiPhysicsSharedCollisionData& Data);
+	/**
+	 * ワーカースレッドから呼び出し可能 / Can be called from any thread.
+	 * 値渡し＋内部 MoveTemp で、書き込みロック区間内のディープコピーを避ける
+	 * Pass by value and MoveTemp internally to avoid a deep copy inside the write-lock critical section
+	 * (callers should MoveTemp; rvalue arguments bind without an extra copy).
+	 */
+	void Publish(FKawaiiPhysicsSharedCollisionData Data);
 
 	/** ワーカースレッドから呼び出し可能 / Can be called from any thread */
 	void AppendTo(FKawaiiPhysicsSharedCollisionData& OutData) const;
