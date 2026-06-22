@@ -682,8 +682,8 @@ private:
 
 #if !UE_BUILD_SHIPPING
 	// --- 警告ログ用診断 / Diagnostics for warning logs ---
-	// 警告ログのノード特定用にGameThread(PreUpdate)で初回1回だけ収集する識別名（AnyThreadからのUObjectアクセス回避）
-	// Identifying names collected once on GameThread (PreUpdate) for warning logs (avoids UObject access on AnyThread)
+	// 警告ログのノード特定用にGameThread(OnInitializeAnimInstance)で1回だけ収集する識別名（AnyThreadからのUObjectアクセス回避）
+	// Identifying names collected once on GameThread (OnInitializeAnimInstance) for warning logs (avoids UObject access on AnyThread)
 	FName CachedAnimInstanceClassName;
 	FName CachedComponentName;
 	FName CachedOwnerActorName;
@@ -692,8 +692,14 @@ private:
 #endif
 
 	// --- Shared Collision ---
-	// 共有コリジョン用キャッシュ（PreUpdateでGameThread初期化、以降はAnyThreadで参照）
-	// Cached shared collision pointers (initialized in PreUpdate on GameThread, then referenced on AnyThread)
+	// Subsystem/owner ActorはGameThread(OnInitializeAnimInstance)で1回解決してキャッシュする。
+	// Evaluate(AnyThread)での GetWorld/GetSubsystem/GetOwner といったUObjectナビゲーションを避けるため。
+	// Resolved once on the GameThread (OnInitializeAnimInstance) to avoid GetWorld/GetSubsystem/GetOwner UObject navigation on AnyThread.
+	TWeakObjectPtr<UKawaiiPhysicsSharedCollisionSubsystem> CachedSharedCollisionSubsystem;
+	TWeakObjectPtr<AActor> CachedSharedCollisionOwnerActor;
+
+	// 共有コリジョン用キャッシュ（Evaluate(AnyThread)で初期化・参照。Subsystemはロックでスレッドセーフ）
+	// Cached shared collision pointers (initialized and referenced in Evaluate on AnyThread; the subsystem is lock-protected)
 	TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> CachedSharedCollisionEntry;
 	TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot> CachedSourceSlot;
 	bool bSharedCollisionInitialized = false;
@@ -767,14 +773,16 @@ public:
 	virtual void CacheBones_AnyThread(const FAnimationCacheBonesContext& Context) override;
 	virtual bool NeedsDynamicReset() const override { return true; }
 	virtual void ResetDynamics(ETeleportType InTeleportType) override;
+	// GameThreadで1回だけ呼ばれる初期化。警告ログ用の識別名収集とbEditing判定をここで行う（毎フレームのPreUpdateを避けるため）
+	// Called once on the GameThread. Collects warning-log identifier names and resolves bEditing here (to avoid a per-frame PreUpdate)
+	virtual bool NeedsOnInitializeAnimInstance() const override { return true; }
+	virtual void OnInitializeAnimInstance(const FAnimInstanceProxy* InProxy, const UAnimInstance* InAnimInstance) override;
 	// End of FAnimNode_Base interface
 
 	// FAnimNode_SkeletalControlBase interface
 	virtual void EvaluateSkeletalControl_AnyThread(FComponentSpacePoseContext& Output,
 	                                               TArray<FBoneTransform>& OutBoneTransforms) override;
 	virtual bool IsValidToEvaluate(const USkeleton* Skeleton, const FBoneContainer& RequiredBones) override;
-	virtual bool HasPreUpdate() const override;
-	virtual void PreUpdate(const UAnimInstance* InAnimInstance) override;
 	// End of FAnimNode_SkeletalControlBase interface
 
 #if WITH_EDITORONLY_DATA
@@ -1064,11 +1072,12 @@ protected:
 	                        const FBoneContainer& BoneContainer, const FTransform& ComponentTransform) const;
 
 	/**
-	 * 共有コリジョンの初期化（PreUpdate経由でGameThreadから呼ばれる）
-	 * Initialize shared collision entry and source slot.
-	 * Called from PreUpdate() on the GameThread to ensure TMap mutations are thread-safe.
+	 * 共有コリジョンのEntry/Slotを初期化する。Evaluate(AnyThread)から呼ばれる。
+	 * GameThreadでキャッシュ済みのSubsystem/owner Actorを使い、Subsystem側のロックで保護されるためWorkerから安全。
+	 * Initialize shared collision entry and source slot, using the GameThread-cached subsystem/owner actor.
+	 * Called from Evaluate on the worker thread; the subsystem is lock-protected so this is thread-safe.
 	 */
-	void InitializeSharedCollision(const UAnimInstance* InAnimInstance);
+	void InitializeSharedCollision();
 
 	/**
 	 * 計算済みコリジョンをSubsystemに公開する（AnyThread）

@@ -43,8 +43,6 @@ DECLARE_CYCLE_STAT_EXTERN(TEXT("KawaiiPhysics_BridgeDummy"), STAT_KawaiiPhysics_
 
 // 角度制限 + 平面制約 + ボーン長復元のO(N)ループ（従来SimulateModifyBonesに埋没） / Angle limit + planar constraint + bone-length restore O(N) loop (was hidden in SimulateModifyBones)
 DECLARE_CYCLE_STAT_EXTERN(TEXT("KawaiiPhysics_AdjustByLimitsAndLength"), STAT_KawaiiPhysics_AdjustByLimitsAndLength, STATGROUP_Anim, KAWAIIPHYSICS_API);
-// PreUpdate(GameThread)全体のコスト / Total cost of PreUpdate on the GameThread
-DECLARE_CYCLE_STAT_EXTERN(TEXT("KawaiiPhysics_PreUpdate_GameThread"), STAT_KawaiiPhysics_PreUpdate, STATGROUP_Anim, KAWAIIPHYSICS_API);
 
 // 入力規模カウンタ（負荷=N×L等の相関用） / Input-size counters (correlate load = N×L, etc.)
 DECLARE_DWORD_COUNTER_STAT_EXTERN(TEXT("KawaiiPhysics_NumSphereColliders"), STAT_KawaiiPhysics_NumSphereColliders, STATGROUP_Anim, KAWAIIPHYSICS_API);

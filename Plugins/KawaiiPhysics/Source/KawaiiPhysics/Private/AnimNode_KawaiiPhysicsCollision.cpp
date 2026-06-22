@@ -935,7 +935,7 @@ void FAnimNode_KawaiiPhysics::InsertBridgeDummiesForConstraints()
 // Shared Collision
 // -------------------------------------------------------------------
 
-void FAnimNode_KawaiiPhysics::InitializeSharedCollision(const UAnimInstance* InAnimInstance)
+void FAnimNode_KawaiiPhysics::InitializeSharedCollision()
 {
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_InitializeSharedCollision);
 	if (bSharedCollisionInitialized)
@@ -943,25 +943,14 @@ void FAnimNode_KawaiiPhysics::InitializeSharedCollision(const UAnimInstance* InA
 		return;
 	}
 
-	const USkeletalMeshComponent* SkelComp = InAnimInstance->GetSkelMeshComponent();
-	if (!SkelComp)
-	{
-		return;
-	}
-
-	const UWorld* World = InAnimInstance->GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	UKawaiiPhysicsSharedCollisionSubsystem* Subsystem = World->GetSubsystem<UKawaiiPhysicsSharedCollisionSubsystem>();
+	// Subsystem/owner ActorはGameThread(OnInitializeAnimInstance)で解決済みのキャッシュを使う
+	UKawaiiPhysicsSharedCollisionSubsystem* Subsystem = CachedSharedCollisionSubsystem.Get();
 	if (!Subsystem)
 	{
 		return;
 	}
 
-	AActor* OwnerActor = SkelComp->GetOwner();
+	AActor* OwnerActor = CachedSharedCollisionOwnerActor.Get();
 	if (!OwnerActor)
 	{
 		return;

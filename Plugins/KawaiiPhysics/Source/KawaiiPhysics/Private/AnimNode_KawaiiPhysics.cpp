@@ -134,7 +134,6 @@ DEFINE_STAT(STAT_KawaiiPhysics_NumBridgeDummyBones);
 DEFINE_STAT(STAT_KawaiiPhysics_InsertInterBoneDummyBones);
 DEFINE_STAT(STAT_KawaiiPhysics_BridgeDummy);
 DEFINE_STAT(STAT_KawaiiPhysics_AdjustByLimitsAndLength);
-DEFINE_STAT(STAT_KawaiiPhysics_PreUpdate);
 DEFINE_STAT(STAT_KawaiiPhysics_NumSphereColliders);
 DEFINE_STAT(STAT_KawaiiPhysics_NumCapsuleColliders);
 DEFINE_STAT(STAT_KawaiiPhysics_NumBoxColliders);
@@ -257,6 +256,31 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_Eval);
 
 	check(OutBoneTransforms.Num() == 0);
+
+	// ランタイム変更（BP setter等でのreinit要求）時の遅延リセット。ポーズに依存せず、無効ルートボーン等での
+	// 早期returnより前に必ず実行する（無効化/タグクリア時に旧Source Slotと古いマージ配列を確実に始末するため）。
+	if (bSharedCollisionNeedsReinit)
+	{
+		// 旧Slotを即座に期限切れ化（Targetが無効化したSourceのコリジョンを次フレームで参照しないように）
+		if (CachedSourceSlot.IsValid())
+		{
+			CachedSourceSlot->MarkExpired();
+		}
+		bSharedCollisionInitialized = false;
+		CachedSharedCollisionEntry.Reset();
+		CachedSourceSlot.Reset();
+		SharedCollisionInitRetryCount = 0;
+		bSharedCollisionInitWarningLogged = false;
+		bSharedCollisionNeedsReinit = false;
+
+		// マージ済み共有コリジョン配列もクリア。無効化/タグクリア後はUpdateSharedCollisionLimitsが呼ばれず
+		// 再populateされないため、ここでクリアしないと古いコリジョン形状がSimulateで使われ続ける。
+		SharedCollisionMergedData.Reset();
+		SharedSphericalLimits.Reset();
+		SharedCapsuleLimits.Reset();
+		SharedBoxLimits.Reset();
+		SharedPlanarLimits.Reset();
+	}
 
 	const FBoneContainer& BoneContainer = Output.Pose.GetPose().GetBoneContainer();
 	FTransform ComponentTransform = Output.AnimInstanceProxy->GetComponentTransform();
@@ -425,9 +449,32 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	UpdatePlanerLimits(PlanarLimits, Output, BoneContainer, ComponentTransform);
 	UpdatePlanerLimits(PlanarLimitsData, Output, BoneContainer, ComponentTransform);
 
-	// 共有コリジョンの更新（初期化はPreUpdateでGameThread実行済み）
+	// 共有コリジョンの初期化と更新（有効時のみ）。reinit処理は関数冒頭で実行済み。
+	// subsystemはロックでスレッドセーフ化済みのためWorker(AnyThread)で実行でき、PreUpdate(GameThread)を介さない。
+	// これによりランタイム有効化(BP setter)も全ビルド構成で正しく動作する。
 	if ((bSharedCollisionSource || bUseSharedCollision) && SharedCollisionGroupTag.IsValid())
 	{
+		// 初期化（未初期化時のみ。Subsystem側のロックでWorkerから安全に呼べる）
+		if (!bSharedCollisionInitialized)
+		{
+			InitializeSharedCollision();
+
+			// 初期化リトライが続く場合に警告ログ（1回のみ）
+			if (!bSharedCollisionInitialized && !bSharedCollisionInitWarningLogged)
+			{
+				SharedCollisionInitRetryCount++;
+				if (SharedCollisionInitRetryCount > CVarSharedCollisionInitRetryThreshold.GetValueOnAnyThread())
+				{
+					KAWAII_LOG_NODE_WARNING(LogKawaiiPhysics,
+						TEXT("SharedCollision: Target could not find source entry for tag [%s]. "
+							"Ensure a source node with matching tag exists in the same actor/child-actor family."),
+						*SharedCollisionGroupTag.ToString());
+					bSharedCollisionInitWarningLogged = true;
+				}
+			}
+		}
+
+		// Target: 全Sourceのコリジョンをマージして取得
 		if (bUseSharedCollision && !bSharedCollisionSource && CachedSharedCollisionEntry.IsValid())
 		{
 			UpdateSharedCollisionLimits(Output);
@@ -543,19 +590,27 @@ bool FAnimNode_KawaiiPhysics::IsValidToEvaluate(const USkeleton* Skeleton, const
 	return true;
 }
 
-bool FAnimNode_KawaiiPhysics::HasPreUpdate() const
+void FAnimNode_KawaiiPhysics::OnInitializeAnimInstance(const FAnimInstanceProxy* InProxy, const UAnimInstance* InAnimInstance)
 {
-	// CDO上でキャッシュされるため無条件true（共有コリジョン初期化にGameThread PreUpdateが必要）
-	return true;
-}
+	FAnimNode_SkeletalControlBase::OnInitializeAnimInstance(InProxy, InAnimInstance);
 
-void FAnimNode_KawaiiPhysics::PreUpdate(const UAnimInstance* InAnimInstance)
-{
-	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_PreUpdate);
+	// 共有コリジョン初期化で使うSubsystem/owner ActorをGameThreadで1回だけ解決してキャッシュする。
+	// （Evaluate(AnyThread)側でGetWorld/GetSubsystem/GetOwnerのUObjectナビゲーションを行わないため）
+	if (InAnimInstance)
+	{
+		if (const UWorld* World = InAnimInstance->GetWorld())
+		{
+			CachedSharedCollisionSubsystem = World->GetSubsystem<UKawaiiPhysicsSharedCollisionSubsystem>();
+		}
+		if (const USkeletalMeshComponent* SkelComp = InAnimInstance->GetSkelMeshComponent())
+		{
+			CachedSharedCollisionOwnerActor = SkelComp->GetOwner();
+		}
+	}
 
 #if !UE_BUILD_SHIPPING
-	// 警告ログ用のノード識別名を初回1回だけ収集（名前はノード生存中に不変なので毎フレーム取得しない）
-	if (CachedAnimInstanceClassName.IsNone() && InAnimInstance)
+	// 警告ログ用のノード識別名を収集（名前はノード生存中に不変なのでGameThread初期化時に1回だけ取得）
+	if (InAnimInstance)
 	{
 		CachedAnimInstanceClassName = InAnimInstance->GetClass()->GetFName();
 		if (const USkeletalMeshComponent* SkelComp = InAnimInstance->GetSkelMeshComponent())
@@ -568,53 +623,18 @@ void FAnimNode_KawaiiPhysics::PreUpdate(const UAnimInstance* InAnimInstance)
 #endif
 
 #if WITH_EDITOR
-	if (const UWorld* World = InAnimInstance->GetWorld())
+	if (InAnimInstance)
 	{
-		if (World->WorldType == EWorldType::Editor ||
-			World->WorldType == EWorldType::EditorPreview)
+		if (const UWorld* World = InAnimInstance->GetWorld())
 		{
-			bEditing = true;
-		}
-	}
-#endif
-
-	// SharedCollisionに対してのランタイム変更時の遅延リセット
-	if (bSharedCollisionNeedsReinit)
-	{
-		// 旧Slotを即座に期限切れ化
-		if (CachedSourceSlot.IsValid())
-		{
-			CachedSourceSlot->MarkExpired();
-		}
-		bSharedCollisionInitialized = false;
-		CachedSharedCollisionEntry.Reset();
-		CachedSourceSlot.Reset();
-		SharedCollisionInitRetryCount = 0;
-		bSharedCollisionInitWarningLogged = false;
-		bSharedCollisionNeedsReinit = false;
-	}
-
-	// 共有コリジョンの初期化（TMapへの書き込みはスレッドセーフでないためGameThreadで実行）
-	if (!bSharedCollisionInitialized
-		&& (bSharedCollisionSource || bUseSharedCollision)
-		&& SharedCollisionGroupTag.IsValid())
-	{
-		InitializeSharedCollision(InAnimInstance);
-
-		// 初期化リトライが続く場合に警告ログ（1回のみ）
-		if (!bSharedCollisionInitialized && !bSharedCollisionInitWarningLogged)
-		{
-			SharedCollisionInitRetryCount++;
-			if (SharedCollisionInitRetryCount > CVarSharedCollisionInitRetryThreshold.GetValueOnGameThread())
+			if (World->WorldType == EWorldType::Editor ||
+				World->WorldType == EWorldType::EditorPreview)
 			{
-				KAWAII_LOG_NODE_WARNING(LogKawaiiPhysics,
-					TEXT("SharedCollision: Target could not find source entry for tag [%s]. "
-						"Ensure a source node with matching tag exists in the same actor/child-actor family."),
-					*SharedCollisionGroupTag.ToString());
-				bSharedCollisionInitWarningLogged = true;
+				bEditing = true;
 			}
 		}
 	}
+#endif
 }
 
 const FVector& FAnimNode_KawaiiPhysics::GetSkelCompMoveVector() const
