@@ -54,8 +54,8 @@ private:
 struct KAWAIIPHYSICS_API FKawaiiPhysicsSharedCollisionEntry
 {
 	/**
-	 * Source用: 自分専用スロットを取得/作成（GameThreadで呼ぶ）
-	 * For sources: Get or create a dedicated slot (call from GameThread)
+	 * Source用: 自分専用スロットを取得/作成（SlotsLockでスレッドセーフ。任意スレッドから呼べる）
+	 * For sources: Get or create a dedicated slot (thread-safe via SlotsLock; callable from any thread)
 	 */
 	TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot> GetOrCreateSlot(uint64 SourceID);
 
@@ -96,14 +96,14 @@ class KAWAIIPHYSICS_API UKawaiiPhysicsSharedCollisionSubsystem : public UTickabl
 
 public:
 	/**
-	 * Source用: Actorファミリーrootのエントリを検索、なければ作成（GameThreadで呼ぶ）
-	 * For sources: Find or create an entry for the actor family root (call from GameThread)
+	 * Source用: Actorファミリーrootのエントリを検索、なければ作成（RegistryLockでスレッドセーフ。任意スレッドから呼べる）
+	 * For sources: Find or create an entry for the actor family root (thread-safe via RegistryLock; callable from any thread)
 	 */
 	TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> FindOrCreateEntry(AActor* Actor, const FGameplayTag& Tag);
 
 	/**
-	 * Target用: Actorファミリーrootのエントリを検索
-	 * For targets: Find an entry for the actor family root
+	 * Target用: Actorファミリーrootのエントリを検索（RegistryLockでスレッドセーフ。任意スレッドから呼べる）
+	 * For targets: Find an entry for the actor family root (thread-safe via RegistryLock; callable from any thread)
 	 */
 	TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> FindEntry(AActor* Actor, const FGameplayTag& Tag) const;
 
@@ -113,12 +113,19 @@ public:
 	// FTickableGameObject interface (via UTickableWorldSubsystem)
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
-	virtual bool IsTickable() const override { return !Registry.IsEmpty(); }
+	// RegistryはWorkerスレッド(FindOrCreateEntry)からも変更されるため、空判定もRegistryLockで保護する（.cppで定義）
+	virtual bool IsTickable() const override;
 	virtual bool IsTickableInEditor() const override { return true; }
 
 private:
 	/** レジストリ: (ActorFamilyRoot, Tag) → Entry / Registry: (ActorFamilyRoot, Tag) -> Entry */
 	TMap<TPair<TWeakObjectPtr<AActor>, FGameplayTag>, TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>> Registry;
+
+	/** Registryの構造変更とイテレーションの競合を防ぐロック（Worker初期化とGameThread Tickの両方が触る）
+	 *  Lock protecting Registry structural changes vs iteration (touched by both worker-thread init and GameThread Tick).
+	 *  ロック順序は Registry → Slots に統一する（Tickは本ロック保持中にEntryのSlotsLockを取る）。デッドロック回避のため逆順は禁止。
+	 *  Lock order is always Registry -> Slots (Tick holds this while taking an Entry's SlotsLock); never the reverse. */
+	mutable FRWLock RegistryLock;
 
 	/** クリーンアップ間隔制御 / Cleanup interval control */
 	float CleanupAccumulator = 0.0f;

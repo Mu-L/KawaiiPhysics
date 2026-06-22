@@ -84,17 +84,23 @@ void FKawaiiPhysicsSharedCollisionSourceSlot::AppendTo(FKawaiiPhysicsSharedColli
 
 TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot> FKawaiiPhysicsSharedCollisionEntry::GetOrCreateSlot(uint64 SourceID)
 {
-	check(IsInGameThread());
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_GetOrCreateSlot);
 
-	// Findは読み取りのみ — GameThread専用なのでロック不要
+	// 既存Slotの検索は読み取りロック
+	{
+		FReadScopeLock ReadLock(SlotsLock);
+		if (TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot>* Existing = Slots.Find(SourceID))
+		{
+			return *Existing;
+		}
+	}
+
+	// 構造変更は書き込みロック。ロック取得待ちの間に他スレッドが作成済みの可能性があるため再確認
+	FWriteScopeLock WriteLock(SlotsLock);
 	if (TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot>* Existing = Slots.Find(SourceID))
 	{
 		return *Existing;
 	}
-
-	// Addは構造変更 — 書き込みロック必要
-	FWriteScopeLock WriteLock(SlotsLock);
 	TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot> NewSlot = MakeShared<FKawaiiPhysicsSharedCollisionSourceSlot>();
 	Slots.Add(SourceID, NewSlot);
 	return NewSlot;
@@ -122,8 +128,6 @@ void FKawaiiPhysicsSharedCollisionEntry::ReadMerged(FKawaiiPhysicsSharedCollisio
 
 void FKawaiiPhysicsSharedCollisionEntry::RemoveExpiredSlots(uint64 CurrentFrame, uint64 MaxAge)
 {
-	check(IsInGameThread());
-	
 	FWriteScopeLock WriteLock(SlotsLock);
 	for (auto SlotIt = Slots.CreateIterator(); SlotIt; ++SlotIt)
 	{
@@ -153,7 +157,6 @@ bool FKawaiiPhysicsSharedCollisionEntry::IsEmpty() const
 TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubsystem::FindOrCreateEntry(
 	AActor* Actor, const FGameplayTag& Tag)
 {
-	check(IsInGameThread());
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_FindOrCreateEntry);
 	
 	if (!Actor || !Tag.IsValid())
@@ -168,11 +171,22 @@ TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubs
 	}
 
 	const TPair<TWeakObjectPtr<AActor>, FGameplayTag> Key(FamilyRoot, Tag);
+
+	// 既存Entryの検索は読み取りロック
+	{
+		FReadScopeLock ReadLock(RegistryLock);
+		if (TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>* Existing = Registry.Find(Key))
+		{
+			return *Existing;
+		}
+	}
+
+	// 構造変更は書き込みロック。ロック取得待ちの間に他スレッドが作成済みの可能性があるため再確認
+	FWriteScopeLock WriteLock(RegistryLock);
 	if (TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>* Existing = Registry.Find(Key))
 	{
 		return *Existing;
 	}
-
 	TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> NewEntry = MakeShared<FKawaiiPhysicsSharedCollisionEntry>();
 	Registry.Add(Key, NewEntry);
 	return NewEntry;
@@ -181,9 +195,8 @@ TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubs
 TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubsystem::FindEntry(
 	AActor* Actor, const FGameplayTag& Tag) const
 {
-	check(IsInGameThread());
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_FindEntry);
-	
+
 	if (!Actor || !Tag.IsValid())
 	{
 		return nullptr;
@@ -196,6 +209,8 @@ TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubs
 	}
 
 	const TPair<TWeakObjectPtr<AActor>, FGameplayTag> Key(FamilyRoot, Tag);
+
+	FReadScopeLock ReadLock(RegistryLock);
 	if (const TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>* Found = Registry.Find(Key))
 	{
 		// Actorが無効ならスキップ（Tick()で定期的にクリーンアップ）
@@ -210,7 +225,10 @@ TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubs
 
 void UKawaiiPhysicsSharedCollisionSubsystem::Deinitialize()
 {
-	Registry.Empty();
+	{
+		FWriteScopeLock WriteLock(RegistryLock);
+		Registry.Empty();
+	}
 	Super::Deinitialize();
 }
 
@@ -225,6 +243,10 @@ void UKawaiiPhysicsSharedCollisionSubsystem::Tick(float DeltaTime)
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_Tick);
 
 	const uint64 CurrentFrame = GFrameCounter;
+
+	// Registryの構造変更とWorkerスレッドのFind/FindOrCreateの競合を防ぐため書き込みロックで保護。
+	// ロック順序は Registry → Slots（Entryメソッドが内部でSlotsLockを取る）。
+	FWriteScopeLock WriteLock(RegistryLock);
 
 	for (auto It = Registry.CreateIterator(); It; ++It)
 	{
@@ -254,6 +276,13 @@ void UKawaiiPhysicsSharedCollisionSubsystem::Tick(float DeltaTime)
 	}
 	SET_DWORD_STAT(STAT_KawaiiPhysics_SharedCollision_NumEntries, Registry.Num());
 	SET_DWORD_STAT(STAT_KawaiiPhysics_SharedCollision_NumSlots, TotalSlots);
+}
+
+bool UKawaiiPhysicsSharedCollisionSubsystem::IsTickable() const
+{
+	// FindOrCreateEntryがWorkerスレッドからRegistryを変更しうるため、空判定も読み取りロックで保護する
+	FReadScopeLock ReadLock(RegistryLock);
+	return !Registry.IsEmpty();
 }
 
 TStatId UKawaiiPhysicsSharedCollisionSubsystem::GetStatId() const
