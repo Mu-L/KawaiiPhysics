@@ -113,6 +113,13 @@ void UKawaiiPhysicsLimitsDataAsset::PostEditChangeChainProperty(FPropertyChanged
 	{
 		int32 ArrayIndex = PropertyChangedEvent.GetArrayIndex(ArrayPropertyName.ToString());
 
+		// GetArrayIndex はインデックス特定不可時に INDEX_NONE(-1) を返すため、範囲外アクセスを防ぐ。
+		// GetArrayIndex returns INDEX_NONE(-1) when the index can't be resolved; guard against out-of-bounds access.
+		if (!Limits.IsValidIndex(ArrayIndex))
+		{
+			return;
+		}
+
 		if (PropertyChangedEvent.ChangeType == EPropertyChangeType::ArrayAdd ||
 			PropertyChangedEvent.ChangeType == EPropertyChangeType::ValueSet)
 		{
