@@ -5,17 +5,11 @@
 #include "Misc/AutomationTest.h"
 #include "KawaiiPhysicsTestHarness.h"
 
-// 物理計算の回帰テスト（Output を引数に取らない物理計算関数を直接呼ぶ）。
-// Regression tests for the physics math (calling the no-Output physics functions directly).
-//   - 決定性 / determinism
-//   - パラメータ応答（重力方向・剛性単調性・減衰オーバーシュート） / parameter response
-//   - フレームレート非依存性 / frame-rate independence
-//   - 数値安定性（NaN/発散なし） / numerical stability
+// 物理計算の回帰テスト（Output 非依存の物理関数を直接呼ぶ）：決定性／パラメータ応答（重力方向・剛性単調性・減衰オーバーシュート）／フレームレート非依存性／数値安定性。
 
 namespace
 {
 	// 標準の縦チェーン構成でシミュレーションし、最終 tip 位置を返す。
-	// Simulate a standard vertical chain and return the final tip location.
 	// OutMaxAbsX != null のとき、シミュレーション中の |tip.X| のピークを返す（オーバーシュート計測用）。
 	FVector SimulateChainTip(float Damping, float Stiffness, const FVector& Gravity,
 	                         bool bFixedSubstep, int32 TargetFps, int32 NumFrames, float FrameDt,
@@ -49,7 +43,6 @@ namespace
 	}
 
 	// 横に並んだ2本のチェーンの tip 間に BoneConstraint を張り、最終距離を返す。
-	// Connects two side-by-side chain tips with a BoneConstraint and returns the final tip distance.
 	float SimulateLateralConstraintDistance(int32 NumFrames, float FrameDt)
 	{
 		FKawaiiPhysicsTestAccessor A;
@@ -81,7 +74,7 @@ namespace
 }
 
 // ---------------------------------------------------------------------------
-//  決定性 / Determinism
+//  決定性
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsDeterminismTest,
                                  "KawaiiPhysics.Simulation.Determinism",
@@ -99,9 +92,8 @@ bool FKawaiiPhysicsDeterminismTest::RunTest(const FString& Parameters)
 }
 
 // ---------------------------------------------------------------------------
-//  抽出した物理計算関数の検証（解析的） / Verify the extracted physics functions (analytic)
+//  抽出した物理計算関数の検証（解析的）
 //  抽出した経路（速度寄与(wind)・legacy gravity・simple external force）を直接検証する。
-//  Directly verifies the extracted code path: velocity contribution (wind), legacy gravity, simple external force.
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsIntegrationCoreTest,
                                  "KawaiiPhysics.Simulation.IntegrationCore",
@@ -132,12 +124,8 @@ bool FKawaiiPhysicsIntegrationCoreTest::RunTest(const FString& Parameters)
 		A.SetTimeState(0.5f, 0.5f);
 		FKawaiiPhysicsModifyBone B = MakeBone();
 		const FVector Velocity = A.CallComputeVerletStepVelocity(B, FVector(0, 3, 0));
-		// この Velocity が Simulate() で ApplyToVelocity に渡る「実速度」（減衰+wind+重力）。公開フックの
-		// 契約を固定する（以前ここに wind だけの値が渡る退行があった）。Simulate() の呼び出し配線自体は
-		// Output 依存のため headless 対象外。
-		// This Velocity is what Simulate() hands to ApplyToVelocity (damped+wind+gravity). Pin the public-hook
-		// contract (a prior regression passed wind only). The Simulate() call wiring itself is Output-dependent
-		// and out of scope for the headless harness.
+		// ApplyToVelocity に渡る「実速度」（減衰+wind+重力）の契約を固定（以前 wind だけが渡る退行があった）。
+		// Simulate() の呼び出し配線自体は Output 依存のため headless 対象外。
 		TestTrue(FString::Printf(TEXT("ApplyToVelocity input (non-legacy) = %s"), *Velocity.ToString()),
 		         Velocity.Equals(FVector(1.5f, 3.0f, -5.0f), Tol));
 		A.CallIntegrateVerletStepPosition(B, Velocity);
@@ -158,7 +146,6 @@ bool FKawaiiPhysicsIntegrationCoreTest::RunTest(const FString& Parameters)
 		FKawaiiPhysicsModifyBone B = MakeBone();
 		const FVector Velocity = A.CallComputeVerletStepVelocity(B, FVector(0, 3, 0));
 		// legacy では重力は位置へ入るので、フックに渡る速度は減衰+wind のみ（重力なし）。
-		// In legacy mode gravity goes to position, so the hook receives damped+wind only (no gravity).
 		TestTrue(FString::Printf(TEXT("ApplyToVelocity input (legacy) = %s"), *Velocity.ToString()),
 		         Velocity.Equals(FVector(1.5f, 3.0f, 0.0f), Tol));
 		A.CallIntegrateVerletStepPosition(B, Velocity);
@@ -187,7 +174,7 @@ bool FKawaiiPhysicsIntegrationCoreTest::RunTest(const FString& Parameters)
 }
 
 // ---------------------------------------------------------------------------
-//  BoneConstraint XPBD dt 正規化 / BoneConstraint XPBD dt normalization
+//  BoneConstraint XPBD dt 正規化
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsBoneConstraintStepDeltaTimeTest,
                                  "KawaiiPhysics.Simulation.BoneConstraintStepDeltaTime",
@@ -236,7 +223,7 @@ bool FKawaiiPhysicsBoneConstraintStepDeltaTimeTest::RunTest(const FString& Param
 }
 
 // ---------------------------------------------------------------------------
-//  SyncBone + BoneSubdivision / internal dummies stay out of SyncBone targets
+//  SyncBone + BoneSubdivision / 内部 dummy は SyncBone のターゲットに含めない
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsSyncBoneSubdivisionTargetTest,
                                  "KawaiiPhysics.Simulation.SyncBoneSubdivisionTargets",
@@ -300,7 +287,7 @@ bool FKawaiiPhysicsSyncBoneSubdivisionPoseRefreshTest::RunTest(const FString& Pa
 
 // ---------------------------------------------------------------------------
 //  SyncBone + BoneSubdivision: 子は stale inter-bone dummy 基準で歪まず剛体並進する
-//  (regression: SyncBone+Subdivision residual stretch — child constrained against not-yet-updated dummy parent)
+//  (回帰: SyncBone+Subdivision の残留ストレッチ — 子が未更新の dummy 親基準で拘束されていた)
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsSyncBoneSubdivisionRigidTranslationTest,
                                  "KawaiiPhysics.Simulation.SyncBoneSubdivisionRigidTranslation",
@@ -312,25 +299,23 @@ bool FKawaiiPhysicsSyncBoneSubdivisionRigidTranslationTest::RunTest(const FStrin
 	A.BuildSyncBoneSubdivisionFixture();
 
 	// root(0) -> inter-bone dummy(1) -> real child(2)。root と child(2) を同一 delta で sync すると剛体並進になるはず。
-	// root(0) -> inter-bone dummy(1) -> real child(2). Syncing root and child(2) by the same delta must be a rigid translation.
 	FKawaiiPhysicsSyncTargetRoot TargetRoot = A.CollectSyncChildTargetsForRoot(0);
 
 	const FVector Delta(0.0f, 10.0f, 0.0f);
 	A.ApplySyncTargetsForRoot(TargetRoot, Delta);
 
 	const float Tol = 0.001f;
-	// root は ParentIndex<0 なので素直に並進 / root has no parent, plain translation
+	// root は ParentIndex<0 なので素直に並進
 	TestTrue(FString::Printf(TEXT("Root translates rigidly: %s"), *A.Bone(0).PoseLocation.ToString()),
 	         A.Bone(0).PoseLocation.Equals(FVector(0.0f, 10.0f, 0.0f), Tol));
 
 	// child(2) の親は inter-bone dummy(1)。修正前は stale dummy=(5,0,0) 基準の長さ拘束で約(7.236,4.472,0)へ歪む。
-	// 修正後は剛体並進 (10,10,0)。/ child(2)'s parent is inter-bone dummy(1). Before the fix the stale-dummy length
-	// constraint distorts it to ~(7.236,4.472,0); after the fix it translates rigidly to (10,10,0).
+	// 修正後は剛体並進 (10,10,0)。
 	TestTrue(FString::Printf(TEXT("Subdivided real child translates rigidly (no stale-dummy distortion): %s"),
 	                         *A.Bone(2).PoseLocation.ToString()),
 	         A.Bone(2).PoseLocation.Equals(FVector(10.0f, 10.0f, 0.0f), Tol));
 
-	// 後段の dummy 再補間で inter-bone dummy も剛体並進位置へ戻る / the later re-interpolation restores the dummy too
+	// 後段の dummy 再補間で inter-bone dummy も剛体並進位置へ戻る
 	A.CallUpdateSubdivisionDummyPoseAfterSyncBones();
 	TestTrue(FString::Printf(TEXT("Inter-bone dummy re-lerps to rigid position: %s"),
 	                         *A.Bone(1).PoseLocation.ToString()),
@@ -341,7 +326,7 @@ bool FKawaiiPhysicsSyncBoneSubdivisionRigidTranslationTest::RunTest(const FStrin
 
 // ---------------------------------------------------------------------------
 //  SyncBone + BoneSubdivision: 非剛体（root/child で delta が異なる）でも segment 長を保存
-//  (constrain against real grandparent at BoneLength/(1-alpha), not the stale inter-bone dummy)
+//  (stale inter-bone dummy ではなく実祖父基準・距離 BoneLength/(1-alpha) で拘束する)
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsSyncBoneSubdivisionLengthPreservedTest,
                                  "KawaiiPhysics.Simulation.SyncBoneSubdivisionLengthPreserved",
@@ -356,8 +341,6 @@ bool FKawaiiPhysicsSyncBoneSubdivisionLengthPreservedTest::RunTest(const FString
 
 	// root と child(2) に異なる delta（attenuation/curve 相当）。stale dummy 基準だと segment が伸縮するが、
 	// 実祖父 gp(=root) 基準・距離 BoneLength/(1-alpha)=10 の拘束で gp→child 長は保たれるはず。
-	// Different deltas for root vs child(2) (emulates attenuation/curve). Constraining against grandparent (root) at
-	// BoneLength/(1-alpha)=10 keeps the gp->child length even when the stale-dummy approach would stretch it.
 	A.ApplySyncTargetsForRootSplit(TargetRoot, FVector(0.0f, 10.0f, 0.0f), FVector(0.0f, 5.0f, 0.0f));
 
 	const float RestLen = 10.0f; // |child(10,0,0) - root(0,0,0)| = BoneLength(5) / (1 - alpha 0.5)
@@ -370,7 +353,7 @@ bool FKawaiiPhysicsSyncBoneSubdivisionLengthPreservedTest::RunTest(const FString
 }
 
 // ---------------------------------------------------------------------------
-//  パラメータ応答 / Parameter response
+//  パラメータ応答
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsParameterResponseTest,
                                  "KawaiiPhysics.Simulation.ParameterResponse",
@@ -378,8 +361,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsParameterResponseTest,
 
 bool FKawaiiPhysicsParameterResponseTest::RunTest(const FString& Parameters)
 {
-	const FVector Gravity(-980, 0, 0); // 横方向重力 / sideways gravity (deflects toward -X)
-	const int32 Frames = 600;          // 10s @ 60fps、十分に整定 / settle
+	const FVector Gravity(-980, 0, 0); // 横方向重力（-X 方向へたわむ）
+	const int32 Frames = 600;          // 10s @ 60fps、十分に整定
 	const float Dt = 1.0f / 60.0f;
 
 	// --- 重力方向: 横重力で tip は -X へ変位 ---
@@ -402,12 +385,9 @@ bool FKawaiiPhysicsParameterResponseTest::RunTest(const FString& Parameters)
 	         MaxLowDamp > MaxHighDamp);
 
 	// --- スナップショット基準値（現状の挙動を固定） ---
-	// 初回実行で出力された値を下のハード assert に固定する。まずは値をログ出力。
-	// Snapshot baseline: capture the value from the first run, then harden into the assert below.
 	const FVector Canonical = SimulateChainTip(0.1f, 0.05f, Gravity, true, 60, Frames, Dt);
 	AddInfo(FString::Printf(TEXT("[SNAPSHOT] ParameterResponse canonical tip = %s"), *Canonical.ToString()));
-	// スナップショット・基準値（2026-06-08, UE5.7 で捕捉）。物理挙動が変わるとここで検出される。
-	// Snapshot baseline captured 2026-06-08 on UE5.7. Any change in core physics behavior trips this.
+	// 基準値（2026-06-08, UE5.7 で捕捉）。物理挙動が変わるとここで検出される。
 	const FVector CanonicalBaseline(-13.782f, 0.0f, -26.647f);
 	TestTrue(FString::Printf(TEXT("Canonical tip snapshot: got %s expected %s"),
 	                         *Canonical.ToString(), *CanonicalBaseline.ToString()),
@@ -417,7 +397,7 @@ bool FKawaiiPhysicsParameterResponseTest::RunTest(const FString& Parameters)
 }
 
 // ---------------------------------------------------------------------------
-//  フレームレート非依存性 / Frame-rate independence
+//  フレームレート非依存性
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsFramerateIndependenceTest,
                                  "KawaiiPhysics.Simulation.FramerateIndependence",
@@ -430,7 +410,6 @@ bool FKawaiiPhysicsFramerateIndependenceTest::RunTest(const FString& Parameters)
 	const int32 TargetFps = 60;
 
 	// 同じシミュレーション時間を 30/60/120fps で実行（固定サブステップ ON）。
-	// Same sim time at 30/60/120 fps with fixed substepping ON.
 	const FVector Tip30 = SimulateChainTip(0.1f, 0.05f, Gravity, true, TargetFps,
 	                                       FMath::RoundToInt(SimTime * 30.0f), 1.0f / 30.0f);
 	const FVector Tip60 = SimulateChainTip(0.1f, 0.05f, Gravity, true, TargetFps,
@@ -456,7 +435,6 @@ bool FKawaiiPhysicsFramerateIndependenceTest::RunTest(const FString& Parameters)
 	         FMath::IsNearlyEqual(Constraint60, Constraint120, ConstraintTol));
 
 	// 対比: サブステップ OFF（legacy）では 30fps と 120fps の差が大きい（フレームレート依存の症状）。
-	// Contrast: with substepping OFF, 30 vs 120 fps diverge much more (the frame-rate-dependence symptom).
 	const FVector Legacy30 = SimulateChainTip(0.1f, 0.05f, Gravity, false, TargetFps,
 	                                          FMath::RoundToInt(SimTime * 30.0f), 1.0f / 30.0f);
 	const FVector Legacy120 = SimulateChainTip(0.1f, 0.05f, Gravity, false, TargetFps,
@@ -473,7 +451,7 @@ bool FKawaiiPhysicsFramerateIndependenceTest::RunTest(const FString& Parameters)
 }
 
 // ---------------------------------------------------------------------------
-//  数値安定性 / Numerical stability (no NaN / no blow-up)
+//  数値安定性（NaN や発散がないこと）
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsNumericalStabilityTest,
                                  "KawaiiPhysics.Simulation.NumericalStability",
@@ -482,7 +460,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKawaiiPhysicsNumericalStabilityTest,
 bool FKawaiiPhysicsNumericalStabilityTest::RunTest(const FString& Parameters)
 {
 	// 縦チェーンは長さ復元により root から最大でも (segment*count) 内に収まる。
-	// The chain stays bounded by total length thanks to length restoration.
 	const float Bound = 1000.0f;
 
 	auto RunScenario = [&](const TCHAR* Name, float Spacing, float Damping, float Stiffness,
@@ -505,15 +482,15 @@ bool FKawaiiPhysicsNumericalStabilityTest::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("%s: bounded (|loc| <= %.0f)"), Name, Bound), A.AllWithin(Bound));
 	};
 
-	// 極端な重力 / extreme gravity
+	// 極端な重力
 	RunScenario(TEXT("ExtremeGravity"), 10.0f, 0.1f, 0.05f, FVector(0, 0, -1.0e6f), true, 1.0f / 60.0f, 120);
-	// 巨大な dt（spiral of death クランプ確認）/ huge dt
+	// 巨大な dt（spiral of death クランプ確認）
 	RunScenario(TEXT("HugeDt"), 10.0f, 0.1f, 0.05f, FVector(0, 0, -980), true, 5.0f, 20);
-	// ゼロ長ボーン / zero-length bones
+	// ゼロ長ボーン
 	RunScenario(TEXT("ZeroLength"), 0.0f, 0.1f, 0.05f, FVector(0, 0, -980), true, 1.0f / 60.0f, 60);
-	// 減衰=1, 剛性=1（境界値）/ full damping & stiffness
+	// 減衰=1, 剛性=1（境界値）
 	RunScenario(TEXT("FullDampingStiffness"), 10.0f, 1.0f, 1.0f, FVector(0, -980, 0), true, 1.0f / 60.0f, 60);
-	// 微小 dt（legacy）/ tiny dt (legacy path)
+	// 微小 dt（legacy）
 	RunScenario(TEXT("TinyDtLegacy"), 10.0f, 0.1f, 0.05f, FVector(0, 0, -980), false, 1.0e-5f, 60);
 
 	return true;

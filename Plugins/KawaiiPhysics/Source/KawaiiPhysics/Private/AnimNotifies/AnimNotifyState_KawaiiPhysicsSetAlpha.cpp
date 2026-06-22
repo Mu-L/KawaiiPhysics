@@ -27,7 +27,7 @@ void UAnimNotifyState_KawaiiPhysicsSetAlpha::NotifyBegin(USkeletalMeshComponent*
                                                          float TotalDuration,
                                                          const FAnimNotifyEventReference& EventReference)
 {
-	// Save current alpha for restore on end.
+	// 終了時に復元するため、現在のAlphaを保存する
 	bHasSavedAlpha = UKawaiiPhysicsLibrary::GetAlphaFromComponent(MeshComp, SavedAlpha, FilterTags, bFilterExactMatch);
 
 	const float Alpha = ResolveAlpha(MeshComp, Animation);

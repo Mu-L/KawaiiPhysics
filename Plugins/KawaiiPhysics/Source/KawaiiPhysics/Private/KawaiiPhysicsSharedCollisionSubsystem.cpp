@@ -6,7 +6,6 @@
 #include "GameFramework/Actor.h"
 
 // SharedCollision CVars（AnimNode_KawaiiPhysics.cpp で定義）
-// SharedCollision CVars (defined in AnimNode_KawaiiPhysics.cpp)
 extern TAutoConsoleVariable<int32> CVarSharedCollisionReadMaxAge;
 extern TAutoConsoleVariable<int32> CVarSharedCollisionCleanupMaxAge;
 extern TAutoConsoleVariable<float> CVarSharedCollisionCleanupInterval;
@@ -55,7 +54,7 @@ void FKawaiiPhysicsSharedCollisionSourceSlot::Publish(FKawaiiPhysicsSharedCollis
 	FWriteScopeLock WriteLock(BufferLock);
 	Buffer = MoveTemp(Data);
 
-	// フレーム番号を記録（鮮度チェック用） / Record frame number for expiration detection
+	// フレーム番号を記録（鮮度チェック用）
 	LastPublishFrame.store(GFrameCounter, std::memory_order_release);
 }
 
@@ -88,14 +87,13 @@ TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot> FKawaiiPhysicsSharedCollisio
 	check(IsInGameThread());
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_GetOrCreateSlot);
 
-	// Findは読み取りのみ — ロック不要（GameThread専用、AnimThreadとは読み取り同士で競合しない）
-	// Find is read-only — no lock needed (GameThread only, no conflict with AnimThread reads)
+	// Findは読み取りのみ — GameThread専用なのでロック不要
 	if (TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot>* Existing = Slots.Find(SourceID))
 	{
 		return *Existing;
 	}
 
-	// Addは構造変更 — 書き込みロック必要 / Add mutates the TMap — write lock required
+	// Addは構造変更 — 書き込みロック必要
 	FWriteScopeLock WriteLock(SlotsLock);
 	TSharedPtr<FKawaiiPhysicsSharedCollisionSourceSlot> NewSlot = MakeShared<FKawaiiPhysicsSharedCollisionSourceSlot>();
 	Slots.Add(SourceID, NewSlot);
@@ -113,7 +111,6 @@ void FKawaiiPhysicsSharedCollisionEntry::ReadMerged(FKawaiiPhysicsSharedCollisio
 	for (const auto& Pair : Slots)
 	{
 		// 期限切れスロットをスキップ（Publishが停止したSourceのデータを除外）
-		// Skip expired slots (exclude data from sources that stopped publishing)
 		if (Pair.Value->IsExpired(CurrentFrame, CVarSharedCollisionReadMaxAge.GetValueOnAnyThread()))
 		{
 			continue;
@@ -202,7 +199,6 @@ TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubs
 	if (const TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>* Found = Registry.Find(Key))
 	{
 		// Actorが無効ならスキップ（Tick()で定期的にクリーンアップ）
-		// Skip if actor is invalid (cleaned up periodically in Tick())
 		if (Key.Key.IsValid())
 		{
 			return *Found;
@@ -232,25 +228,25 @@ void UKawaiiPhysicsSharedCollisionSubsystem::Tick(float DeltaTime)
 
 	for (auto It = Registry.CreateIterator(); It; ++It)
 	{
-		// Actorが無効 → エントリ除去 / Remove entry if actor is invalid
+		// Actorが無効 → エントリ除去
 		if (!It->Key.Key.IsValid())
 		{
 			It.RemoveCurrent();
 			continue;
 		}
 
-		// 期限切れスロットを除去 / Remove expired slots
+		// 期限切れスロットを除去
 		FKawaiiPhysicsSharedCollisionEntry& Entry = *It->Value;
 		Entry.RemoveExpiredSlots(CurrentFrame, CVarSharedCollisionCleanupMaxAge.GetValueOnGameThread());
 
-		// スロットが空になったエントリも除去 / Remove entry if all slots are gone
+		// スロットが空になったエントリも除去
 		if (Entry.IsEmpty())
 		{
 			It.RemoveCurrent();
 		}
 	}
 
-	// 整数カウンタ更新 / Update integer counters
+	// 整数カウンタ更新
 	int32 TotalSlots = 0;
 	for (const auto& Pair : Registry)
 	{

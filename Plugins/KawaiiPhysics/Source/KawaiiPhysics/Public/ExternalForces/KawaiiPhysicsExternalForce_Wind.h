@@ -42,14 +42,10 @@ private:
 	TObjectPtr<UWorld> World;
 
 	/**
-	* 風パラメータ（Scene問い合わせ＝game-thread状態）をフレーム1回だけ取得してキャッシュする。
-	* 固定サブステップ時にワーカースレッドから毎ステップ Scene を触らないため（§7-E / FixedSubstepping.md）。
-	* インデックスは ModifyBones の添字（Bone.Index）。ダミーボーンは BoneRef が空（NAME_None）で
-	* 衝突するため、ボーン名ではなく添字をキーにする。
-	* Per-frame cache of wind parameters (a Scene query = game-thread state), fetched once in PreApply so the
-	* worker thread does not touch the Scene every substep (§7-E / FixedSubstepping.md).
-	* Indexed by ModifyBones index (Bone.Index); dummy bones have an empty BoneRef (NAME_None) and would
-	* collide, so we key by index rather than bone name.
+	* 風パラメータ（Scene 問い合わせ=game-thread 状態）をフレーム1回だけキャッシュし、ワーカースレッドから毎ステップ Scene を触らない（§7-E / FixedSubstepping.md）。
+	* キーは ModifyBones の添字（ダミーボーンは BoneRef が空=NAME_None で衝突するため、ボーン名は使わない）。
+	* Per-frame cache of wind params (a Scene query = game-thread state) so the worker thread never touches the Scene per substep (§7-E / FixedSubstepping.md).
+	* Keyed by ModifyBones index (dummy bones have an empty BoneRef = NAME_None, which would collide, so bone name can't be the key).
 	*/
 	// SimulationSpace の風向き（VRandConeノイズ・風速乗算の前） / Wind direction in SimulationSpace (before VRandCone noise & speed multiply)
 	TArray<FVector> CachedWindDirection;

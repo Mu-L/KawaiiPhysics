@@ -14,7 +14,7 @@ void FKawaiiPhysics_ExternalForce_Gravity::Initialize(const FAnimationInitialize
 {
 	Super::Initialize(Context);
 
-	// SkeletalMeshComponentがnullの場合のクラッシュを回避 / Avoid crash when the component is null
+	// SkeletalMeshComponentがnullの場合のクラッシュを回避
 	const USkeletalMeshComponent* SkelComp = Context.AnimInstanceProxy->GetSkelMeshComponent();
 	OwnerCharacter = SkelComp ? Cast<ACharacter>(SkelComp->GetOwner()) : nullptr;
 }
@@ -26,7 +26,7 @@ void FKawaiiPhysics_ExternalForce_Gravity::PreApply(FAnimNode_KawaiiPhysics& Nod
 
 	Force = bUseOverrideGravityDirection ? OverrideGravityDirection.GetSafeNormal() : FVector(0, 0, -1.0f);
 
-	// For Character's Custom Gravity Direction
+	// Characterのカスタム重力方向に対応
 	if (OwnerCharacter)
 	{
 #if	ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3

@@ -10,34 +10,22 @@
 #include "KawaiiPhysicsCollisionLimits.h"
 
 /**
- * 自動テスト用アクセサ / Automation test accessor.
+ * 自動テスト用アクセサ
  *
- * FAnimNode_KawaiiPhysics の friend として private/protected の sim 状態・物理計算関数・
- * コリジョン関数へアクセスし、FComponentSpacePoseContext(Output) 無しで物理計算を
- * ヘッドレス実行する。
- * Friend of FAnimNode_KawaiiPhysics: reaches the private/protected sim state, integration
- * core functions, and collision functions to drive the physics core headlessly (no Output).
+ * FAnimNode_KawaiiPhysics の friend として private/protected の sim 状態・物理計算・コリジョン関数へアクセスし、Output 無しで物理コアをヘッドレス実行する。
  *
- * StepOnce()/StepFrame() は SimulateOnce()/SimulateModifyBones() の「Output を使わない純粋部分」
- * の処理順序を、単純な縦チェーン（ダミー/ブリッジ/LOD/外力/world collision/BaseBoneSpace を
- * 含まない）に対して複製する。per-step の数式そのものは本番と同一の関数を呼ぶため、
- * 数式へのリグレッションはここで検出できる（順序変更のみ本番と二重管理）。
- * StepOnce()/StepFrame() replicate the Output-free pure subset of SimulateOnce()/SimulateModifyBones()
- * for a simple vertical chain (no dummies/bridges/LOD/external-forces/world-collision/BaseBoneSpace).
- * The per-step math calls the exact same production functions, so math regressions are caught here;
- * only the call ORDER is replicated (kept in sync via cross-referenced comments).
+ * StepOnce()/StepFrame() は SimulateOnce()/SimulateModifyBones() の Output 非依存部分を単純な縦チェーン用に複製する（数式は本番と同一関数を呼ぶので数式リグレッションを検出でき、複製は呼び出し順序のみ＝本番と二重管理。ダミー/ブリッジ/LOD/外力/world collision/BaseBoneSpace は非対応）。
  */
 struct FKawaiiPhysicsTestAccessor
 {
 	FAnimNode_KawaiiPhysics Node;
 
 	// ========================================================================
-	//  セットアップ / Setup
+	//  セットアップ
 	// ========================================================================
 
 	/**
 	 * 直線の縦チェーンを生成。index0 = root(kinematic)、Origin から GravityAxisDir の逆へ Spacing 間隔。
-	 * Build a straight vertical chain: index 0 = root (kinematic), spaced `Spacing` apart from `Origin`.
 	 * デフォルトは -Z 方向（重力で垂れ下がる素直な向き）。
 	 */
 	void BuildVerticalChain(int32 NumBones, float Spacing, const FVector& Origin = FVector::ZeroVector,
@@ -67,7 +55,6 @@ struct FKawaiiPhysicsTestAccessor
 
 	/**
 	 * 横に並んだ2本の縦チェーンを生成。index 0..N-1 が左、N..2N-1 が右。
-	 * Build two side-by-side vertical chains: indices 0..N-1 are left, N..2N-1 are right.
 	 */
 	void BuildTwoVerticalChains(int32 NumBonesPerChain, float Spacing, float LateralSpacing,
 	                            const FVector& Origin = FVector::ZeroVector)
@@ -99,9 +86,9 @@ struct FKawaiiPhysicsTestAccessor
 	}
 
 	/**
-	 * SyncBone + BoneSubdivision regression fixture.
-	 * index 0 = real root, 1 = inter-bone dummy, 2 = real child,
-	 * 3 = terminal inter-bone dummy, 4 = subdivided tip dummy, 5 = legacy direct tip dummy.
+	 * SyncBone + BoneSubdivision の回帰テスト用フィクスチャ。
+	 * index 0 = 実root, 1 = inter-bone dummy, 2 = 実child,
+	 * 3 = 末端 inter-bone dummy, 4 = 分割 tip dummy, 5 = legacy の直接 tip dummy。
 	 */
 	void BuildSyncBoneSubdivisionFixture()
 	{
@@ -120,7 +107,6 @@ struct FKawaiiPhysicsTestAccessor
 			if (!bDummy)
 			{
 				// 実ボーンは有効な CompactPoseIndex を持たせ、LODフォールバック判定が誤発火しないようにする。
-				// Give real bones a valid compact-pose index so the LOD fallback doesn't misfire headlessly.
 				Bone.BoneRef.CachedCompactPoseIndex = FCompactPoseBoneIndex(Index);
 			}
 			Bone.Location = Loc;
@@ -157,7 +143,7 @@ struct FKawaiiPhysicsTestAccessor
 		Node.ModifyBones[3].ChildIndices = {4};
 	}
 
-	/** 全ボーンに同一の PhysicsSettings を適用 / Apply the same PhysicsSettings to every bone. */
+	/** 全ボーンに同一の PhysicsSettings を適用 */
 	void SetAllPhysicsSettings(const FKawaiiPhysicsSettings& Settings)
 	{
 		for (FKawaiiPhysicsModifyBone& Bone : Node.ModifyBones)
@@ -176,7 +162,7 @@ struct FKawaiiPhysicsTestAccessor
 		Node.SkelCompMoveRotation = MoveRot;
 	}
 
-	/** 固定サブステッピング設定（DeveloperSettings の代わりに直接指定） / Configure fixed substepping directly. */
+	/** 固定サブステッピング設定（DeveloperSettings の代わりに直接指定） */
 	void SetFixedSubstepping(bool bEnable, int32 TargetFps, int32 MaxSubsteps = 8)
 	{
 		Node.bUseFixedSubsteppingCached = bEnable;
@@ -214,14 +200,12 @@ struct FKawaiiPhysicsTestAccessor
 	}
 
 	// ========================================================================
-	//  ステップ実行 / Stepping
+	//  ステップ実行
 	// ========================================================================
 
 	/**
 	 * 1フレーム分を進める（SimulateModifyBones の純粋部分を複製）。
-	 * Advance one frame (replicates the pure subset of SimulateModifyBones).
 	 * SkelComp 移動量のサブステップ分配は SkelCompMoveVector==0 前提のため省略。
-	 * SkelComp-move substep distribution is omitted (assumes SkelCompMoveVector == 0).
 	 */
 	void StepFrame(float FrameDt)
 	{
@@ -231,7 +215,6 @@ struct FKawaiiPhysicsTestAccessor
 		}
 
 		// ハーネスの未対応ケースは黙って通さず、警告を出して即座に中断する（Output依存のため未実装）。
-		// Fail loudly AND stop on cases the headless harness does not model (they require Output).
 		if (!ensureMsgf(Node.SimulationSpace != EKawaiiPhysicsSimulationSpace::BaseBoneSpace,
 		                TEXT("FKawaiiPhysicsTestAccessor: BaseBoneSpace is not supported headlessly (needs Output-side "
 			                "space conversion). Use ComponentSpace/WorldSpace, or a real-mesh integration test.")))
@@ -255,7 +238,6 @@ struct FKawaiiPhysicsTestAccessor
 			Node.bInSubstep = false;
 			// 初回フレームの DeltaTimeOld=0 による 0/0 を回避。本番 Initialize と同じ初期値に揃える
 			// （AnimNode_KawaiiPhysics.cpp:153 の DeltaTimeOld = 1/TargetFramerate）。
-			// Avoid 0/0 on the first frame; seed exactly like production's Initialize (1/TargetFramerate).
 			if (Node.DeltaTimeOld <= 0.0f)
 			{
 				Node.DeltaTimeOld = 1.0f / Node.GetEffectiveTargetFramerate();
@@ -302,7 +284,7 @@ struct FKawaiiPhysicsTestAccessor
 		}
 	}
 
-	/** N フレーム進める / Advance N frames at a fixed frame dt. */
+	/** 固定フレーム dt で N フレーム進める */
 	void StepFrames(int32 NumFrames, float FrameDt)
 	{
 		for (int32 i = 0; i < NumFrames; ++i)
@@ -312,7 +294,7 @@ struct FKawaiiPhysicsTestAccessor
 	}
 
 	// ========================================================================
-	//  個別関数の直接呼び出し（コリジョン単体テスト用） / Direct calls for collision unit tests
+	//  個別関数の直接呼び出し（コリジョン単体テスト用）
 	// ========================================================================
 
 	void CallSphereCollision(FKawaiiPhysicsModifyBone& Bone, TArray<FSphericalLimit>& Limits)
@@ -336,7 +318,7 @@ struct FKawaiiPhysicsTestAccessor
 		Node.AdjustByAngleLimit(Bone, ParentBone);
 	}
 
-	// 物理計算関数の直接呼び出し（抽出した処理を解析的に検証する用） / Direct calls to the physics functions (to verify the extracted code path analytically).
+	// 物理計算関数の直接呼び出し（抽出した処理を解析的に検証する用）
 	FVector CallComputeVerletStepVelocity(FKawaiiPhysicsModifyBone& Bone, const FVector& WindVelocity)
 	{
 		return Node.ComputeVerletStepVelocity(Bone, WindVelocity);
@@ -371,7 +353,6 @@ struct FKawaiiPhysicsTestAccessor
 	}
 
 	// ApplySyncBones の target 適用部（root → child targets）を Output 無しで再現。
-	// Replicates ApplySyncBones' target application (root then child targets) without Output.
 	void ApplySyncTargetsForRoot(FKawaiiPhysicsSyncTargetRoot& TargetRoot, const FVector& Translation)
 	{
 		TargetRoot.Apply(Node.ModifyBones, Translation);
@@ -382,7 +363,6 @@ struct FKawaiiPhysicsTestAccessor
 	}
 
 	// 非剛体ケース用：root と child で異なる translation（attenuation/curve相当）を適用。
-	// Non-rigid case: apply different translations to root vs child targets (emulates attenuation/curve).
 	void ApplySyncTargetsForRootSplit(FKawaiiPhysicsSyncTargetRoot& TargetRoot,
 	                                  const FVector& RootTranslation, const FVector& ChildTranslation)
 	{
@@ -396,13 +376,11 @@ struct FKawaiiPhysicsTestAccessor
 	void CallUpdateSubdivisionDummyPoseAfterSyncBones()
 	{
 		// GetCompactPoseIndex は bUseSkeletonIndex=false 時 CachedCompactPoseIndex を返す（コンテナ非依存）ため空でよい。
-		// GetCompactPoseIndex returns CachedCompactPoseIndex (container-independent here), so an empty container suffices.
 		FBoneContainer EmptyContainer;
 		Node.UpdateSubdivisionDummyPoseAfterSyncBones(EmptyContainer);
 	}
 
 	// 直接呼び出しテスト用の時間状態（bInSubstep=false なので GetStepDeltaTime()==Dt）。
-	// Time state for direct core tests (bInSubstep=false => GetStepDeltaTime()==Dt).
 	void SetTimeState(float Dt, float DtOld)
 	{
 		Node.DeltaTime = Dt;
@@ -411,7 +389,6 @@ struct FKawaiiPhysicsTestAccessor
 	}
 
 	// サブステップ中の直接呼び出しテスト用の時間状態。
-	// Time state for direct core tests while a fixed substep is in progress.
 	void SetSubstepTimeState(float FrameDt, float StepDt)
 	{
 		Node.DeltaTime = FrameDt;
@@ -422,7 +399,7 @@ struct FKawaiiPhysicsTestAccessor
 	}
 
 	// ========================================================================
-	//  アクセサ / Accessors
+	//  アクセサ
 	// ========================================================================
 
 	int32 Num() const { return Node.ModifyBones.Num(); }
@@ -430,7 +407,7 @@ struct FKawaiiPhysicsTestAccessor
 	const FKawaiiPhysicsModifyBone& Bone(int32 Index) const { return Node.ModifyBones[Index]; }
 	FVector TipLocation() const { return Node.ModifyBones.Last().Location; }
 
-	/** 全ボーン位置が有限（NaN/Inf 無し）か / True if every bone location is finite (no NaN/Inf). */
+	/** 全ボーン位置が有限（NaN/Inf 無し）か */
 	bool AllFinite() const
 	{
 		for (const FKawaiiPhysicsModifyBone& B : Node.ModifyBones)
@@ -443,7 +420,7 @@ struct FKawaiiPhysicsTestAccessor
 		return true;
 	}
 
-	/** 全ボーン位置が絶対値 Bound 内に収まっているか（発散検出） / True if all locations stay within |Bound|. */
+	/** 全ボーン位置が絶対値 Bound 内に収まっているか（発散検出） */
 	bool AllWithin(float Bound) const
 	{
 		for (const FKawaiiPhysicsModifyBone& B : Node.ModifyBones)
@@ -461,8 +438,6 @@ private:
 	/**
 	 * フレーム冒頭の準備（SimulateModifyBones の skip フラグ設定 + ポーズ・スナップショットを複製）。
 	 * 単純チェーン用: root(ParentIndex<0) を kinematic として skip、それ以外を simulate。
-	 * Per-frame prep replicating SimulateModifyBones (skip flags + pose snapshot) for a simple chain:
-	 * root (ParentIndex<0) is kinematic => skip; the rest simulate.
 	 */
 	void PrepareFrame()
 	{
@@ -483,9 +458,7 @@ private:
 
 	/**
 	 * 1ステップ分（SimulateOnce の純粋部分を複製）。
-	 * One simulation step (replicates the pure subset of SimulateOnce).
 	 * 順序: root follow → 物理計算 → BoneConstraint(before) → コリジョン → BoneConstraint(after) → 角度制限+平面拘束+長さ復元。
-	 * Order: root follow -> physics steps -> BoneConstraint(before) -> collision -> BoneConstraint(after) -> angle/planar/length restore.
 	 */
 	void StepOnce()
 	{

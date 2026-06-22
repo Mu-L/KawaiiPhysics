@@ -179,7 +179,7 @@ int32 FAnimNode_KawaiiPhysics::AddModifyBone(TArray<FKawaiiPhysicsModifyBone>& I
 	bool AddedChildBone = false;
 	if (ChildBoneIndices.Num() > 0)
 	{
-		//for some mesh where tip bone is empty (without any skinning weight in the mesh), ChildBoneIndices > 0 but no actual child bones are created
+		// スキニングウェイトを持たない末端ボーンでは ChildBoneIndices > 0 でも実子は生成されない
 		for (auto ChildBoneIndex : ChildBoneIndices)
 		{
 			TArray<int32> InsertedInterBoneDummyIndices;
@@ -187,7 +187,7 @@ int32 FAnimNode_KawaiiPhysics::AddModifyBone(TArray<FKawaiiPhysicsModifyBone>& I
 			                                                            RefSkeleton, ModifyBoneIndex, ChildBoneIndex,
 			                                                            InsertedInterBoneDummyIndices);
 
-			// 子ボーンの再帰追加 / Recursive child addition
+			// 子ボーンの再帰追加
 			int32 ChildModifyBoneIndex = AddModifyBone(InModifyBones, Output, BoneContainer, RefSkeleton,
 			                                           ChildBoneIndex,
 			                                           InExcludeBones);
@@ -209,19 +209,17 @@ int32 FAnimNode_KawaiiPhysics::AddModifyBone(TArray<FKawaiiPhysicsModifyBone>& I
 	if (!AddedChildBone && DummyBoneLength > 0.0f)
 	{
 		// 末端ダミーの位置（実ボーンから前方へ DummyBoneLength）
-		// Terminal tip dummy location (forward from the real bone by DummyBoneLength)
 		const FVector TipLocation = NewModifyBone.Location + GetBoneForwardVector(NewModifyBone.PrevRotation) *
 			DummyBoneLength;
 
 		// 実ボーンと末端ダミーの間にもインターボーンダミーを挿入（実ボーン区間と同様に分割）
-		// Subdivide the terminal segment between the real bone and the tip dummy, like real-bone segments
 		TArray<int32> InsertedInterBoneDummyIndices;
 		const int32 EffectiveParentIndex = InsertInterBoneDummyBonesCore(
 			InModifyBones, ModifyBoneIndex, TipLocation, NewModifyBone.PrevRotation,
 			RefBonePoseTransform.GetScale3D(), DummyBoneLength, InsertedInterBoneDummyIndices);
 		const int32 InsertedCount = InsertedInterBoneDummyIndices.Num();
 
-		// Add dummy modify bone
+		// 末端ダミーの ModifyBone を追加
 		FKawaiiPhysicsModifyBone DummyModifyBone;
 		DummyModifyBone.bDummy = true;
 		DummyModifyBone.Location = TipLocation;
@@ -233,7 +231,6 @@ int32 FAnimNode_KawaiiPhysics::AddModifyBone(TArray<FKawaiiPhysicsModifyBone>& I
 		if (InsertedCount > 0)
 		{
 			// 分割時: 末端ダミーは最後のインターボーンダミーの子。BoneLength は最終セグメント長
-			// Subdivided: tip dummy is child of the last inter-bone dummy; BoneLength is the final segment
 			DummyModifyBone.InterBoneRealParentIndex = ModifyBoneIndex;
 			DummyModifyBone.BoneLength = DummyBoneLength / (InsertedCount + 1);
 		}
@@ -246,7 +243,6 @@ int32 FAnimNode_KawaiiPhysics::AddModifyBone(TArray<FKawaiiPhysicsModifyBone>& I
 		if (InsertedCount > 0)
 		{
 			// 挿入したインターボーンダミーの InterBoneRealChildIndex を末端ダミーに向ける
-			// Point inserted inter-bone dummies' real child at the tip dummy
 			FinalizeInterBoneDummyBones(InModifyBones, InsertedInterBoneDummyIndices, DummyBoneIndex);
 		}
 	}
@@ -290,7 +286,6 @@ int32 FAnimNode_KawaiiPhysics::InsertInterBoneDummyBones(TArray<FKawaiiPhysicsMo
 	const FVector ChildScale = ChildTransform.GetScale3D();
 
 	// 実子の位置・回転・スケールを明示的に渡してコア処理に委譲
-	// Delegate to the shared core with the real child transform
 	return InsertInterBoneDummyBonesCore(InModifyBones, ParentModifyBoneIndex, ChildLocation, ChildRotation, ChildScale,
 	                                     Distance, OutInsertedInterBoneDummyIndices);
 }
@@ -303,12 +298,8 @@ int32 FAnimNode_KawaiiPhysics::InsertInterBoneDummyBonesCore(TArray<FKawaiiPhysi
                                                              const float Distance,
                                                              TArray<int32>& OutInsertedInterBoneDummyIndices) const
 {
-	// 縦方向ダミーボーン（BoneSubdivision）挿入の実処理コスト。初期化時のみ。
-	// AddModifyBone（末端区間）と上のオーバーロード（実ボーン区間）の両呼び出し元がここを通るため、
-	// 共通のCoreだけに計測を置き、同一STATの二重計上を避ける。
-	// Actual cost of inserting vertical inter-bone dummies (BoneSubdivision). Init-time only.
-	// Both callers (AddModifyBone for the tip segment, and the overload above for real-bone segments)
-	// funnel through this Core, so instrumenting only here measures all of it without double-counting.
+	// 縦方向ダミーボーン（BoneSubdivision）挿入コスト（初期化時のみ）。
+	// 両呼び出し元が通る共通Coreにのみ計測を置き、同一STATの二重計上を避ける。
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_InsertInterBoneDummyBones);
 
 	OutInsertedInterBoneDummyIndices.Reset();
@@ -321,24 +312,14 @@ int32 FAnimNode_KawaiiPhysics::InsertInterBoneDummyBonesCore(TArray<FKawaiiPhysi
 
 	// 最小配置数 = 指定数。bBoneSubdivisionCollisionOnly は積分挙動のみに作用し、配置数には影響しない。
 	// 0距離区間（座標が重なる実ボーン間）はダミーが同一点に乗るだけなので 0。
-	// Minimum count = the requested count. bBoneSubdivisionCollisionOnly only affects integration behavior, not the count.
-	// Zero-length segments (coincident real bones) get 0 since dummies would land on the same point.
 	int32 EffectiveCount = (Distance > KINDA_SMALL_NUMBER) ? FMath::Clamp(BoneSubdivisionCount, 0, 10) : 0;
 
 	// bBoneSubdivisionDensifyByRadius: 半径に対しボーン間が離れた区間では、コリジョン球が隙間なく並ぶよう
 	// BoneSubdivisionCount を最小として追加配置する（coverage確保）。近接区間は最小のまま。
-	// When enabled, add dummies (using BoneSubdivisionCount as a floor) so collision spheres cover the gap where
-	// bones are far apart relative to their radius. Close segments keep the minimum.
 	if (bBoneSubdivisionDensifyByRadius && Distance > KINDA_SMALL_NUMBER)
 	{
-		// 被覆は最も小さい半径に合わせる必要がある（小さい球ほど隙間ができやすい）ため、RadiusCurveの最小スケールで
-		// 実効半径を見積もる（過少配置=隙間より、過剰配置=安全側に倒す）。挿入時点では各ボーンのLengthRateFromRootが
-		// 未確定のため、区間個別ではなくカーブ全体の最小で保守的に評価する。
-		// Coverage must match the smallest radius (smaller spheres leave gaps more easily), so estimate the effective
-		// radius from the curve's minimum scale (bias toward over-placing rather than leaving gaps). Per-bone
-		// LengthRateFromRoot isn't computed yet at insertion time, so evaluate conservatively over the whole curve.
-		// 一定間隔サンプルだとキー位置の狭い谷を見落とすため、両端の評価値に加えて領域[0,1]内の全カーブキー値を走査する。
-		// Uniform sampling can miss a narrow valley at a key, so scan both endpoints plus every curve key value within [0,1].
+		// 被覆漏れを防ぐため実効半径は保守的に見積もる（隙間より過剰配置側に倒す）。
+		// LengthRateFromRoot が未確定なため、両端＋[0,1]内の全キーを走査しカーブ全体の最小スケールを採る。
 		const FRichCurve* RadiusCurve = RadiusCurveData.GetRichCurveConst();
 		float MinRadiusCurveScale = FMath::Min(RadiusCurve->Eval(0.0f, 1.0f), RadiusCurve->Eval(1.0f, 1.0f));
 		for (const FRichCurveKey& Key : RadiusCurve->Keys)
@@ -354,7 +335,7 @@ int32 FAnimNode_KawaiiPhysics::InsertInterBoneDummyBonesCore(TArray<FKawaiiPhysi
 		EffectiveCount = FMath::Max(EffectiveCount, CoverageCount);
 	}
 
-	// 暴走防止の上限（半径が極端に小さい場合の過剰生成を抑える）。/ Safety cap (guards against a tiny radius blowing up the count).
+	// 暴走防止の上限（半径が極端に小さい場合の過剰生成を抑える）。
 	constexpr int32 MaxInterBoneSubdivisionPerSegment = 50;
 	EffectiveCount = FMath::Min(EffectiveCount, MaxInterBoneSubdivisionPerSegment);
 
@@ -459,11 +440,9 @@ void FAnimNode_KawaiiPhysics::CalcBoneLength(FKawaiiPhysicsModifyBone& Bone,
 		{
 			// tip dummy: 親がインターボーンダミー(=末端区間が分割済み)の場合、BoneLengthは
 			// AddModifyBoneで最終セグメント長に設定済みなので上書きしない（LengthFromRootの二重計上防止）
-			// Tip dummy: when the parent is an inter-bone dummy (terminal segment subdivided), BoneLength is
-			// already the final-segment length set in AddModifyBone — don't overwrite (avoids double-counting)
 			if (!InModifyBones[Bone.ParentIndex].bInterBoneDummy)
 			{
-				Bone.BoneLength = DummyBoneLength; // 非分割 tip dummy / non-subdivided tip dummy
+				Bone.BoneLength = DummyBoneLength; // 非分割 tip dummy
 			}
 		}
 		// else: inter-bone dummy → BoneLengthはAddModifyBoneで設定済み
@@ -483,8 +462,6 @@ void FAnimNode_KawaiiPhysics::UpdateTipDummyPose(FKawaiiPhysicsModifyBone& Bone)
 {
 	// tip dummy: 分割時は即時親がインターボーンダミー(Pass2でしか確定しない)になるため、
 	// 実親(InterBoneRealParentIndex)を基準に計算して循環依存を回避。非分割時はParentIndex。
-	// Tip dummy: when subdivided, the immediate parent is an inter-bone dummy (only set in Pass 2),
-	// so compute from the real ancestor to avoid a stale/circular pose. Non-subdivided uses ParentIndex.
 	const int32 RealAncestorIndex = (Bone.InterBoneRealParentIndex >= 0)
 		                                ? Bone.InterBoneRealParentIndex
 		                                : Bone.ParentIndex;
@@ -515,12 +492,9 @@ void FAnimNode_KawaiiPhysics::UpdateInterBoneDummyPose(FKawaiiPhysicsModifyBone&
 
 	// 末端ダミーを実子とする場合、tip dummyはBoneRef空でCompactPose<0になるが
 	// PoseLocationは確定済みなのでLODフォールバック判定から除外する
-	// When the real child is a tip dummy (empty BoneRef → CompactPose<0), its PoseLocation is
-	// already computed, so exclude it from the LOD fallback check.
 	const bool bRealChildIsTipDummy = RealChild.bDummy && !RealChild.bInterBoneDummy;
 
 	// LOD安全チェック: RealChildがLODで無効な場合、親のPoseにフォールバック
-	// LOD safety: if the real child is invalid under the current LOD, fall back to the parent pose.
 	const FCompactPoseBoneIndex RealChildCompactPose = RealChild.BoneRef.GetCompactPoseIndex(BoneContainer);
 	if (!bRealChildIsTipDummy && RealChildCompactPose < 0)
 	{
@@ -540,16 +514,13 @@ void FAnimNode_KawaiiPhysics::UpdateInterBoneDummyPose(FKawaiiPhysicsModifyBone&
 void FAnimNode_KawaiiPhysics::UpdateModifyBonesPoseTransform(FComponentSpacePoseContext& Output,
                                                              const FBoneContainer& BoneContainer)
 {
-	// 1パス目: 実ボーンとtip dummyのPoseLocationを更新
-	// Pass 1: Update real bones and tip dummies (inter-bone dummies need both endpoints ready)
+	// 1パス目: 実ボーンとtip dummyのPoseLocationを更新（inter-bone dummyは両端の確定が必要）
 	for (auto& Bone : ModifyBones)
 	{
 		SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_UpdateModifyBonesPoseTransform);
 
 		// bridge dummyはPoseを更新しない（生成時のLERP値を据え置き）。
 		// このガードが無いと下のtip-dummy分岐に誤って入り、DummyBoneLength分の誤ったforward-offset poseになる。
-		// Bridge dummies keep their creation-time pose (no update). Without this they would wrongly enter the
-		// tip-dummy branch below and get a bogus DummyBoneLength forward-offset pose.
 		if (Bone.bBridgeDummy)
 		{
 			continue;
@@ -557,7 +528,7 @@ void FAnimNode_KawaiiPhysics::UpdateModifyBonesPoseTransform(FComponentSpacePose
 
 		if (Bone.bInterBoneDummy)
 		{
-			continue; // 2パス目で処理 / Deferred to pass 2
+			continue; // 2パス目で処理
 		}
 
 		if (Bone.bDummy)
@@ -569,7 +540,7 @@ void FAnimNode_KawaiiPhysics::UpdateModifyBonesPoseTransform(FComponentSpacePose
 			const auto CompactPoseIndex = Bone.BoneRef.GetCompactPoseIndex(BoneContainer);
 			if (CompactPoseIndex < 0)
 			{
-				// Reset bone location and rotation may cause trouble when switching between skeleton LODs #44
+				// ボーンの位置・回転をリセットすると、スケルトンのLOD切り替え時に問題が起きることがある #44
 				if (ResetBoneTransformWhenBoneNotFound)
 				{
 					Bone.PoseLocation = FVector::ZeroVector;
@@ -587,7 +558,6 @@ void FAnimNode_KawaiiPhysics::UpdateModifyBonesPoseTransform(FComponentSpacePose
 	}
 
 	// 2パス目: inter-bone dummyのPoseLocationを補間（実親・実子のPoseLocationが確定済み）
-	// Pass 2: Update inter-bone dummies now that both real parent and child PoseLocations are current
 	for (auto& Bone : ModifyBones)
 	{
 		if (!Bone.bInterBoneDummy)
@@ -628,7 +598,6 @@ int32 FAnimNode_KawaiiPhysics::CalcInterBoneDummyCoverageCount(float Distance, f
 
 	// N個のDummyBone → (N+1)セグメント。各セグメント長 <= 2*AvgRadius なら隣接コリジョン球が重なり隙間なく被覆。
 	// Distance / (N+1) <= 2*AvgRadius → N+1 >= Distance/(2*AvgRadius) → N >= Distance/(2*AvgRadius) - 1
-	// N coverage dummies → (N+1) segments; each <= 2*AvgRadius means adjacent spheres overlap and leave no gap.
 	const int32 CoverageCount = FMath::CeilToInt(Distance / (2.0f * AvgRadius)) - 1;
 
 	return FMath::Max(CoverageCount, 0);

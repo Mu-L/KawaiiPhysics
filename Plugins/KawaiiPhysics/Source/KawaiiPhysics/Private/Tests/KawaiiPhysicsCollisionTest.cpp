@@ -6,13 +6,11 @@
 #include "KawaiiPhysicsTestHarness.h"
 
 // コリジョン押し出しの正しさ（解析的基準値）。
-// Collision push-out correctness against analytically derived baselines.
 // 各形状: ボーン(半径r)が形状に食い込んだとき、表面+r へ正しく押し出されることを検証。
-// For each shape: a bone (radius r) penetrating the shape must be pushed exactly to surface + r.
 
 namespace
 {
-	// ボーン1個を生成（位置・前フレーム位置・コリジョン半径） / Make a single bone.
+	// ボーン1個を生成（位置・前フレーム位置・コリジョン半径）
 	FKawaiiPhysicsModifyBone MakeBone(const FVector& Location, float Radius,
 	                                  const FVector& PrevLocation)
 	{
@@ -24,7 +22,7 @@ namespace
 		return Bone;
 	}
 
-	constexpr float GCollisionTol = 0.01f; // 0.1mm スケール / sub-millimeter tolerance
+	constexpr float GCollisionTol = 0.01f; // 0.1mm スケール
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +54,7 @@ bool FKawaiiPhysicsSphereOuterTest::RunTest(const FString& Parameters)
 	                         *Bone.Location.ToString(), *Expected.ToString()),
 	         Bone.Location.Equals(Expected, GCollisionTol));
 
-	// 表面の外側にあるボーンは動かさない / a bone already outside must not move.
+	// 表面の外側にあるボーンは動かさない
 	FKawaiiPhysicsModifyBone Outside = MakeBone(FVector(20, 0, 0), 3.0f, FVector(20, 0, 0));
 	A.CallSphereCollision(Outside, Limits);
 	TestTrue(TEXT("Sphere: bone outside is untouched"),
@@ -142,25 +140,16 @@ bool FKawaiiPhysicsBoxTest::RunTest(const FString& Parameters)
 	                         *Bone.Location.ToString(), *Expected.ToString()),
 	         Bone.Location.Equals(Expected, GCollisionTol));
 
-	// 完全に内部（buried）ケース。注: 現行アルゴリズムは中心方向へ「半径ぶん」だけ押すため箱から出きらず、
-	// (5,0,0)+(1,0,0)*3 = (8,0,0) で止まる（理想の押し出し (13,0,0) ではない）。現挙動の固定＝リグレッション検出用。
-	// Buried case. NOTE: the current algorithm pushes only "radius" along the center direction, so the bone does
-	// not fully exit the box and stops at (8,0,0) (not the ideal (13,0,0)). This pins current behavior (regression).
+	// 完全に内部（buried）ケース。現行アルゴリズムは中心方向へ「半径ぶん」だけ押すため箱から出きらず
+	// (8,0,0) で止まる（理想は (13,0,0)）。現挙動の固定＝リグレッション検出用。
 	FKawaiiPhysicsModifyBone Buried = MakeBone(FVector(5, 0, 0), 3.0f, FVector(5, 0, 0));
 	A.CallBoxCollision(Buried, Limits);
 	TestTrue(FString::Printf(TEXT("Box buried push (pins current behavior): got %s expected (8,0,0)"),
 	                         *Buried.Location.ToString()),
 	         Buried.Location.Equals(FVector(8, 0, 0), GCollisionTol));
 
-	// 中心ちょうど一致の縮退ケース。修正前は半径方向が定まらず押し出されない（中心に留まる）バグ。
-	// 修正後は最小貫通軸（X==Y==Z のため +X）へ決定的に押し出され、closest点(=中心)+ (1,0,0)*3 = (3,0,0)。
-	// 注: (3,0,0) はまだ Box 内部だが、これは上の buried ケース(5→8)と同じ既存挙動（半径ぶんのみ押す）。
-	// 本修正の目的は完全脱出ではなく「中心に留まって全く動かない」ゼロ法線バグの解消。
-	// Center-coincident degenerate case. Before the fix the radial direction was undefined and the bone was not
-	// pushed at all (stuck at the center). After the fix it is pushed deterministically along the smallest-penetration
-	// axis (+X since X==Y==Z), landing at closestPoint(=center) + (1,0,0)*3 = (3,0,0).
-	// NOTE: (3,0,0) is still inside the box, matching the existing buried behavior (5->8 above): the fix targets the
-	// zero-normal stuck-at-center bug, not full de-penetration.
+	// 中心一致の縮退ケース。修正前はゼロ法線で中心に留まるバグ → 最小貫通軸（X==Y==Z なので +X）へ決定的に押し出し (3,0,0)。
+	// 目的は完全脱出でなくゼロ法線バグの解消（buried 同様「半径ぶんのみ押す」ので Box 内部に留まる）。
 	FKawaiiPhysicsModifyBone Center = MakeBone(FVector(0, 0, 0), 3.0f, FVector(0, 0, 0));
 	A.CallBoxCollision(Center, Limits);
 	TestTrue(FString::Printf(TEXT("Box center-coincident push-out: got %s expected (3,0,0)"),
@@ -233,11 +222,11 @@ bool FKawaiiPhysicsAngleLimitTest::RunTest(const FString& Parameters)
 	                         *Child.Location.ToString(), *Expected.ToString()),
 	         Child.Location.Equals(Expected, GCollisionTol));
 
-	// 距離（ボーン長）が保存されること / bone length preserved.
+	// 距離（ボーン長）が保存されること
 	TestTrue(TEXT("Angle limit preserves bone length"),
 	         FMath::IsNearlyEqual(static_cast<float>((Child.Location - Parent.Location).Size()), 10.0f, GCollisionTol));
 
-	// 制限角度内のボーンは動かさない / a bone within the limit must not move.
+	// 制限角度内のボーンは動かさない
 	FKawaiiPhysicsModifyBone Within;
 	Within.Location = FVector(10, 0, 0); // ポーズと一致（0°）
 	Within.PoseLocation = FVector(10, 0, 0);

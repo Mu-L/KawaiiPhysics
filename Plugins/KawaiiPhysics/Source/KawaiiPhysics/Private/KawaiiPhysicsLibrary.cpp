@@ -324,7 +324,7 @@ DEFINE_FUNCTION(UKawaiiPhysicsLibrary::execSetExternalForceWildcardProperty)
 
 	ExecResult = EKawaiiPhysicsAccessExternalForceResult::NotValid;
 
-	// Read wildcard Value input.
+	// ワイルドカードの Value 入力を読み取る
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.MostRecentPropertyContainer = nullptr;
 	Stack.StepCompiledIn<FStructProperty>(nullptr);
@@ -368,7 +368,7 @@ DEFINE_FUNCTION(UKawaiiPhysicsLibrary::execGetExternalForceWildcardProperty)
 
 	ExecResult = EKawaiiPhysicsAccessExternalForceResult::NotValid;
 
-	// Read wildcard Value input.
+	// ワイルドカードの Value 入力を読み取る
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.MostRecentPropertyContainer = nullptr;
 	Stack.StepCompiledIn<FStructProperty>(nullptr);

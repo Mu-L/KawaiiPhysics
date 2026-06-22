@@ -293,9 +293,9 @@ void FAnimNode_KawaiiPhysics::UpdatePlanerLimits(TArray<FPlanarLimit>& Limits, F
 		}
 		else
 		{
+			// 床用に DrivingBone が空に設定されている場合を考慮
 			if (Planar.DrivingBone.BoneName.IsNone())
 			{
-				// Maybe the DrivingBone is set to empty for the floor
 				FTransform OffsetTransform(Planar.OffsetRotation, Planar.OffsetLocation);
 				OffsetTransform = ConvertSimulationSpaceTransform(Output, EKawaiiPhysicsSimulationSpace::ComponentSpace,
 				                                                  SimulationSpace, OffsetTransform);
@@ -320,14 +320,13 @@ void FAnimNode_KawaiiPhysics::AdjustByWorldCollision(FComponentSpacePoseContext&
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_WorldCollision);
 
 	// bridge dummy は ParentIndex<0 だがコリジョン代理として World Collision に参加させる（PrevLocation→Location でスイープ）
-	// BridgeDummy dummies have ParentIndex<0 but must still sweep against world geometry (they are collision proxies)
 	if (!OwningComp || !OwningComp->GetWorld() || (Bone.ParentIndex < 0 && !Bone.bBridgeDummy))
 	{
 		return;
 	}
 
 
-	/** the trace is not done in game thread, so TraceTag does not draw debug traces*/
+	/** トレースはゲームスレッド上で実行されないため、TraceTag はデバッグトレースを描画しない */
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(KawaiiCollision));
 
 	if (bIgnoreSelfComponent)
@@ -335,7 +334,7 @@ void FAnimNode_KawaiiPhysics::AdjustByWorldCollision(FComponentSpacePoseContext&
 		Params.AddIgnoredComponent(OwningComp);
 	}
 
-	// Get collision settings from component	
+	// コンポーネントからコリジョン設定を取得
 	ECollisionChannel TraceChannel = bOverrideCollisionParams
 		                                 ? CollisionChannelSettings.GetObjectType()
 		                                 : OwningComp->GetCollisionObjectType();
@@ -355,7 +354,7 @@ void FAnimNode_KawaiiPhysics::AdjustByWorldCollision(FComponentSpacePoseContext&
 
 	if (bIgnoreSelfComponent)
 	{
-		// Do sphere sweep
+		// sphere sweep
 		FHitResult Result;
 		bool bHit = World->SweepSingleByChannel(
 			Result, TraceStartLocationWS, TraceEndLocationWS, FQuat::Identity,
@@ -378,7 +377,7 @@ void FAnimNode_KawaiiPhysics::AdjustByWorldCollision(FComponentSpacePoseContext&
 	}
 	else
 	{
-		// Do sphere sweep and ignore bones later
+		// sphere sweep（ヒット後に対象ボーンを除外）
 		WorldCollisionHitsScratch.Reset();
 		bool bHit = World->SweepMultiByChannel(WorldCollisionHitsScratch, TraceStartLocationWS,
 		                                       TraceEndLocationWS, FQuat::Identity, TraceChannel,
@@ -410,7 +409,7 @@ void FAnimNode_KawaiiPhysics::AdjustByWorldCollision(FComponentSpacePoseContext&
 				continue;
 			}
 
-			//should we ignore this hit?
+			// このヒットを無視すべきか？
 			IsIgnoreHit = false;
 			if (Result.Component == OwningComp && Result.BoneName != NAME_None)
 			{
@@ -427,7 +426,6 @@ void FAnimNode_KawaiiPhysics::AdjustByWorldCollision(FComponentSpacePoseContext&
 					}
 				}
 				// プレフィックス未設定（一般的なケース）ではToString自体を回避
-				// Skip the ToString entirely when no prefixes are set (the common case)
 				if (!IsIgnoreHit && !IgnoreBoneNamePrefixStrings.IsEmpty())
 				{
 					const FString ResultBoneNameString = Result.BoneName.ToString();
@@ -442,7 +440,7 @@ void FAnimNode_KawaiiPhysics::AdjustByWorldCollision(FComponentSpacePoseContext&
 				}
 			}
 
-			//found the blocking hit we shouldn't ignore!
+			// 無視対象でないブロッキングヒットを採用
 			if (!IsIgnoreHit)
 			{
 				if (Result.bStartPenetrating)
@@ -492,10 +490,7 @@ void FAnimNode_KawaiiPhysics::AdjustBySphereCollision(FKawaiiPhysicsModifyBone& 
 		}
 		else
 		{
-			// ボーン半径がスフィア半径以上（内側に収まらない退化ケース）では実効内半径を0にクランプし、
-			// ガードと補正で同一値を使うことで中心へピン留め（符号反転による反対側への飛びを防止）
-			// Clamp the effective inner radius to 0 for the degenerate case where the bone radius >= sphere radius,
-			// and reuse it for both the guard and the correction so the bone is pinned to the center (no sign-flip overshoot)
+			// ボーン半径≥スフィア半径だと内半径(=スフィア半径−ボーン半径)が負になり反対側へ飛ぶ。Max(...,0)で中心にピン留めして回避。
 			const float LimitDistanceInner = FMath::Max(Sphere.Radius - Bone.PhysicsSettings.Radius, 0.0f);
 			const FVector Delta = Bone.Location - Sphere.Location;
 			const float DistSq = Delta.SizeSquared();
@@ -550,7 +545,7 @@ void FAnimNode_KawaiiPhysics::AdjustByBoxCollision(FKawaiiPhysicsModifyBone& Bon
 		FBox LocalBox(-Box.Extent, Box.Extent);
 		if (FMath::SphereAABBIntersection(FSphere(LocalSphereCenter, SphereRadius), LocalBox))
 		{
-			// Calculate the point of the Box closest to the center of the Sphere
+			// Sphere の中心に最も近い Box 上の点を計算
 			FVector ClosestPoint = LocalSphereCenter;
 			ClosestPoint.X = FMath::Clamp(ClosestPoint.X, LocalBox.Min.X, LocalBox.Max.X);
 			ClosestPoint.Y = FMath::Clamp(ClosestPoint.Y, LocalBox.Min.Y, LocalBox.Max.Y);
@@ -559,14 +554,13 @@ void FAnimNode_KawaiiPhysics::AdjustByBoxCollision(FKawaiiPhysicsModifyBone& Bon
 			FVector PushOutVector = LocalSphereCenter - ClosestPoint;
 			float Distance = PushOutVector.Size();
 
-			// When the bone sphere is completely buried inside the box, forced to push.
+			// ボーンスフィアが Box 内部に完全に埋没している場合は強制的に押し出す。
 			if (PushOutVector.IsNearlyZero())
 			{
 				PushOutVector = LocalSphereCenter;
 				Distance = SphereRadius;
 
 				// 中心一致時は半径方向が定まらず GetSafeNormal()==0 で動かなくなるため、最近面（最小貫通軸）を選ぶ。
-				// Center-coincident => zero normal => stuck; pick the nearest face (smallest-penetration axis).
 				if (PushOutVector.IsNearlyZero())
 				{
 					const FVector Penetration = Box.Extent - LocalSphereCenter.GetAbs();
@@ -585,7 +579,7 @@ void FAnimNode_KawaiiPhysics::AdjustByBoxCollision(FKawaiiPhysicsModifyBone& Bon
 				}
 			}
 
-			// push
+			// 押し出し
 			if (Distance <= SphereRadius)
 			{
 				FVector PushOutDirection = PushOutVector.GetSafeNormal();
@@ -682,7 +676,6 @@ void FAnimNode_KawaiiPhysics::AdjustByBoneConstraints()
 	for (FModifyBoneConstraint& BoneConstraint : MergedBoneConstraints)
 	{
 		// IsValid()はLength>0のみ確認するため、indexの範囲も明示的に検証（堅牢化）
-		// IsValid() only checks Length>0; validate indices explicitly to avoid OOB access (hardening)
 		if (!BoneConstraint.IsValid() ||
 			!ModifyBones.IsValidIndex(BoneConstraint.ModifyBoneIndex1) ||
 			!ModifyBones.IsValidIndex(BoneConstraint.ModifyBoneIndex2))
@@ -711,10 +704,9 @@ void FAnimNode_KawaiiPhysics::AdjustByBoneConstraints()
 		// XBPD
 		float Constraint = DeltaLength - BoneConstraint.Length;
 		// enum 値の破損や将来の追加に備え、インデックスを配列範囲内へクランプ。
-		// Clamp the index into the array range to guard against enum corruption / future additions.
 		const int32 ComplianceIndex = FMath::Clamp(static_cast<int32>(ComplianceType), 0, XPBDComplianceValues.Num() - 1);
 		float Compliance = XPBDComplianceValues[ComplianceIndex];
-		// 極小 StepDt で compliance が発散しないようガード。/ Guard against a tiny StepDt blowing up compliance.
+		// 極小 StepDt で compliance が発散しないようガード。
 		const float StepDt = FMath::Max(GetStepDeltaTime(), KINDA_SMALL_NUMBER);
 		Compliance /= StepDt * StepDt;
 		float DeltaLambda = (Constraint - Compliance * BoneConstraint.Lambda) / (2 + Compliance); // 2 = SumMass
@@ -758,7 +750,7 @@ void FAnimNode_KawaiiPhysics::InitBoneConstraints()
 			(ModifyBones[Constraint.ModifyBoneIndex1].Location - ModifyBones[Constraint.ModifyBoneIndex2].Location).
 			Size();
 
-		// DummyBone's constraint
+		// DummyBone の Constraint
 		if (bAutoAddChildDummyBoneConstraint)
 		{
 			// tip dummy constraint（inter-bone dummyを除外）
@@ -786,13 +778,11 @@ void FAnimNode_KawaiiPhysics::InitBoneConstraints()
 					Size();
 				NewDummyBoneConstraint.bIsDummy = true;
 				// 細分化の除外設定のみ継承（complianceは既存挙動を変えないため継承しない）
-				// Inherit only the subdivision opt-out (NOT compliance — keep existing behavior byte-identical)
 				NewDummyBoneConstraint.bExcludeFromSubdivision = Constraint.bExcludeFromSubdivision;
 				DummyBoneConstraint.Add(NewDummyBoneConstraint);
 			}
 
 			// inter-bone dummy間の横方向Constraint自動生成
-			// Auto-generate lateral constraints between inter-bone dummies of adjacent chains
 			auto CollectInterBoneDummies = [&](int32 BoneIdx) -> TArray<int32>
 			{
 				TArray<int32> Dummies;
@@ -816,10 +806,7 @@ void FAnimNode_KawaiiPhysics::InitBoneConstraints()
 							Idx = NextIdx;
 						}
 
-						// 末端区間が分割されている場合、チェーン末尾の tip dummy も横方向ペア対象に含める
-						// （tip dummy は ID_N の後ろに移動し直接子探索では見つからないため）
-						// If the terminal segment is subdivided, also include the chain-tail tip dummy in the
-						// lateral pairing (it now sits behind ID_N and isn't found by the direct-child search)
+						// 末端区間が分割されている場合、チェーン末尾の tip dummy も横ペア対象に含める（ID_N の後ろに移動し直接子探索では見つからないため）
 						if (Dummies.Num() > 0)
 						{
 							const int32 LastDummy = Dummies.Last();
@@ -851,7 +838,6 @@ void FAnimNode_KawaiiPhysics::InitBoneConstraints()
 					(ModifyBones[Dummies1[k]].Location - ModifyBones[Dummies2[k]].Location).Size();
 				NewConstraint.bIsDummy = true;
 				// 細分化の除外設定のみ継承（complianceは既存挙動を変えないため継承しない）
-				// Inherit only the subdivision opt-out (NOT compliance — keep existing behavior byte-identical)
 				NewConstraint.bExcludeFromSubdivision = Constraint.bExcludeFromSubdivision;
 				DummyBoneConstraint.Add(NewConstraint);
 			}
@@ -860,9 +846,7 @@ void FAnimNode_KawaiiPhysics::InitBoneConstraints()
 
 	MergedBoneConstraints.Append(DummyBoneConstraint);
 
-	// 横方向Constraintに沿ってbridge dummy（コリジョンセンサー）を挿入。元Constraintは温存（置換しない）
-	// Insert bridge collision-SENSOR dummies along horizontal constraints (original constraints are kept intact;
-	// feedback to real bones is the per-frame direct displacement transfer in SimulateModifyBones)
+	// 横方向Constraintに沿って bridge dummy（コリジョンセンサー）を挿入。元Constraintは温存し、反映は毎フレームの直接変位転送（SimulateModifyBones）が行う。
 	InsertBridgeDummiesForConstraints();
 }
 
@@ -876,12 +860,8 @@ void FAnimNode_KawaiiPhysics::InsertBridgeDummiesForConstraints()
 
 	const FRichCurve* RadiusCurve = RadiusCurveData.GetRichCurveConst();
 
-	// 元のMergedBoneConstraintsは置換せず温存する（列間隔の剛性を維持）。
-	// ここではコリジョンセンサーとなる bridge dummy を ModifyBones に追加するだけ。
-	// 実ボーンへのフィードバックは毎フレームの「直接変位転送パス」(SimulateModifyBones) が行う。
-	// Keep the original constraints intact (preserves column spacing). Here we only add bridge collision-SENSOR
-	// dummies to ModifyBones; feedback to the real bones is done per-frame by the direct displacement-transfer pass.
-	// MergedBoneConstraints is not modified, so the range-for is safe even though ModifyBones grows.
+	// 元のMergedBoneConstraintsは置換せず温存（列間隔の剛性を維持）。bridge dummy を ModifyBones に追加するだけ。
+	// MergedBoneConstraints を変更しないため、ModifyBones が拡張されても range-for は安全。
 	for (const FModifyBoneConstraint& Constraint : MergedBoneConstraints)
 	{
 		if (Constraint.bExcludeFromSubdivision)
@@ -903,16 +883,12 @@ void FAnimNode_KawaiiPhysics::InsertBridgeDummiesForConstraints()
 		const float Dist = (P2 - P1).Size();
 
 		// 端点ごとの実効Radiusを各端点のLengthRateでカーブ評価（テーパー対応。グローバル最大半径は使わない）。
-		// Per-endpoint effective radius from the curve at each endpoint's LengthRate (taper-aware; not a global max).
 		const float LR1 = ModifyBones[I1].LengthRateFromRoot;
 		const float LR2 = ModifyBones[I2].LengthRateFromRoot;
 		const float R1 = PhysicsSettings.Radius * FMath::Max(RadiusCurve->Eval(LR1, 1.0f), 0.0f);
 		const float R2 = PhysicsSettings.Radius * FMath::Max(RadiusCurve->Eval(LR2, 1.0f), 0.0f);
 
-		// コリジョン被覆用: 端点スフィアが既に重なる(Dist<=R1+R2)なら隙間が無いのでセンサー不要。
-		// それ以外は指定数をそのまま使う（被覆には重なりが必要なので半径による間引きはしない）。
-		// Coverage: if the endpoint spheres already overlap (Dist <= R1+R2) there is no gap -> no sensors.
-		// Otherwise use the requested count directly (coverage needs overlap; no radius-based culling here).
+		// 端点スフィアが既に重なる(Dist<=R1+R2)なら隙間が無いのでセンサー不要。被覆には重なりが必要なので半径による間引きはしない。
 		if (Dist <= FMath::Max(R1 + R2, KINDA_SMALL_NUMBER))
 		{
 			continue;
@@ -932,7 +908,7 @@ void FAnimNode_KawaiiPhysics::InsertBridgeDummiesForConstraints()
 			FKawaiiPhysicsModifyBone BridgeDummy;
 			BridgeDummy.bDummy = true;
 			BridgeDummy.bBridgeDummy = true;
-			// 配置用に InterBone* フィールドを端点1/端点2/補間率として流用 / Reuse InterBone* fields for placement & feedback
+			// 配置用に InterBone* フィールドを端点1/端点2/補間率として流用
 			BridgeDummy.InterBoneRealParentIndex = I1;
 			BridgeDummy.InterBoneRealChildIndex = I2;
 			BridgeDummy.InterBoneAlpha = LerpAlpha;
@@ -942,10 +918,9 @@ void FAnimNode_KawaiiPhysics::InsertBridgeDummiesForConstraints()
 			BridgeDummy.PrevRotation = FQuat::Slerp(Q1, Q2, LerpAlpha);
 			BridgeDummy.PoseRotation = BridgeDummy.PrevRotation;
 			BridgeDummy.PoseScale = FMath::Lerp(ScaleA, ScaleB, LerpAlpha);
-			BridgeDummy.ParentIndex = -1; // 縦階層に属さない / not part of the vertical hierarchy
+			BridgeDummy.ParentIndex = -1; // 縦階層に属さない
 			BridgeDummy.BoneLength = Dist / (N + 1);
 			// LengthRateは端点平均（毎フレームのUpdatePhysicsSettingsがこれを基にRadius等を再計算するため必須）
-			// LengthRate = average of endpoints (per-frame UpdatePhysicsSettings derives Radius from it — required)
 			BridgeDummy.LengthRateFromRoot = 0.5f * (LR1 + LR2);
 			BridgeDummy.PhysicsSettings = BaseSettings;
 			BridgeDummy.PhysicsSettings.Radius = 0.5f * (R1 + R2);
@@ -1011,7 +986,6 @@ void FAnimNode_KawaiiPhysics::InitializeSharedCollision(const UAnimInstance* InA
 	}
 
 	// Targetの場合、Entry取得成功時のみ初期化完了（未取得時は次フレームでリトライ）
-	// For targets: only mark initialized if entry was found (retry next frame otherwise)
 	if (!bUseSharedCollision || bSharedCollisionSource || CachedSharedCollisionEntry.IsValid())
 	{
 		bSharedCollisionInitialized = true;
@@ -1029,8 +1003,7 @@ void FAnimNode_KawaiiPhysics::WriteSharedCollisionToSubsystem(
 
 	FKawaiiPhysicsSharedCollisionData Data;
 
-	// 汎用ヘルパー: 有効なコリジョンをシミュレーション空間→ワールド空間に変換して収集
-	// Generic helper: collect enabled collision limits and convert from simulation space to world space
+	// ヘルパー: 有効なコリジョンを SimulationSpace→WorldSpace に変換して収集
 	auto ConvertAndAppend = [&](const auto& InLimits, auto& OutLimits, auto PostConvert)
 	{
 		for (const auto& Limit : InLimits)
@@ -1057,13 +1030,12 @@ void FAnimNode_KawaiiPhysics::WriteSharedCollisionToSubsystem(
 	};
 
 	// 再割り当てを避けるため事前確保（無効分も含む上限。少量の過剰確保は許容）。
-	// Pre-reserve to avoid reallocations during append (upper bound incl. disabled entries; minor over-alloc is fine).
 	Data.SphericalLimits.Reserve(SphericalLimits.Num() + SphericalLimitsData.Num());
 	Data.CapsuleLimits.Reserve(CapsuleLimits.Num() + CapsuleLimitsData.Num());
 	Data.BoxLimits.Reserve(BoxLimits.Num() + BoxLimitsData.Num());
 	Data.PlanarLimits.Reserve(PlanarLimits.Num() + PlanarLimitsData.Num());
 
-	// 全コリジョンソースを収集 / Collect from all collision sources
+	// 全コリジョンソースを収集
 	ConvertAndAppend(SphericalLimits,     Data.SphericalLimits, NoOp);
 	ConvertAndAppend(SphericalLimitsData, Data.SphericalLimits, NoOp);
 	ConvertAndAppend(CapsuleLimits,       Data.CapsuleLimits,   NoOp);
@@ -1097,8 +1069,7 @@ void FAnimNode_KawaiiPhysics::UpdateSharedCollisionLimits(
 		return;
 	}
 
-	// 汎用ヘルパー: ワールド空間→シミュレーション空間に変換して格納
-	// Generic helper: convert from world space to simulation space and store
+	// ヘルパー: WorldSpace→SimulationSpace に変換して格納
 	auto ConvertAndStore = [&](const auto& InLimits, auto& OutLimits, auto PostConvert)
 	{
 		OutLimits.Reserve(InLimits.Num());

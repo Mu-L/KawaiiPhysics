@@ -121,13 +121,13 @@ void FAnimNode_KawaiiPhysics::Initialize_AnyThread(const FAnimationInitializeCon
 	BoxLimitsData.Empty();
 	PlanarLimitsData.Empty();
 
-	// 旧Slotを即座に期限切れ化 / Mark old slot as immediately expired
+	// 旧Slotを即座に期限切れ化
 	if (CachedSourceSlot.IsValid())
 	{
 		CachedSourceSlot->MarkExpired();
 	}
 
-	// 共有コリジョンのキャッシュをリセット / Reset shared collision cache
+	// 共有コリジョンのキャッシュをリセット
 	bSharedCollisionInitialized = false;
 	CachedSharedCollisionEntry.Reset();
 	CachedSourceSlot.Reset();
@@ -136,7 +136,7 @@ void FAnimNode_KawaiiPhysics::Initialize_AnyThread(const FAnimationInitializeCon
 	bSharedCollisionNeedsReinit = false;
 	bModifyBonesNeedsReinit = false;
 
-	// 共有コリジョンワーク配列をリセット / Reset shared collision working arrays
+	// 共有コリジョンワーク配列をリセット
 	SharedCollisionMergedData.Reset();
 	SharedSphericalLimits.Reset();
 	SharedCapsuleLimits.Reset();
@@ -149,10 +149,10 @@ void FAnimNode_KawaiiPhysics::Initialize_AnyThread(const FAnimationInitializeCon
 
 	ModifyBones.Empty();
 
-	// For Avoiding Zero Divide in the first frame
+	// 最初のフレームでのゼロ除算を回避するため
 	DeltaTimeOld = 1.0f / static_cast<float>(GetEffectiveTargetFramerate());
 
-	// サブステップ状態をリセット / Reset substep state
+	// サブステップ状態をリセット
 	SubstepAccumulator = 0.0f;
 	bSubstepPoseInitialized = false;
 
@@ -195,7 +195,6 @@ void FAnimNode_KawaiiPhysics::ResetDynamics(ETeleportType InTeleportType)
 	}
 
 	// サブステップ：未消費時間を破棄し、ポーズ補間の前フレーム値を次フレームで再初期化させる
-	// Substep: flush unconsumed time and re-seed the pose-interpolation previous-frame value next frame
 	SubstepAccumulator = 0.0f;
 	bSubstepPoseInitialized = false;
 }
@@ -325,7 +324,7 @@ void FAnimNode_KawaiiPhysics::AnimDrawDebug(FComponentSpacePoseContext& Output)
 				}
 #endif
 
-				// Shared collision limits (green) / 共有コリジョン（緑）
+				// 共有コリジョン（緑）
 				if (bUseSharedCollision && !bSharedCollisionSource)
 				{
 					for (const auto& SphericalLimit : SharedSphericalLimits)
@@ -419,15 +418,15 @@ void FAnimNode_KawaiiPhysics::AnimDrawDebugBox(FComponentSpacePoseContext& Outpu
 		                                     LineThickness, SDPG_Foreground);
 	};
 
-	// +X / -X faces: cover YZ
+	// +X / -X 面：YZ平面をカバー
 	DrawFaceRect(FVector(E.X, 0, 0), FVector(1, 0, 0), E.Y, E.Z);
 	DrawFaceRect(FVector(-E.X, 0, 0), FVector(-1, 0, 0), E.Y, E.Z);
 
-	// +Y / -Y faces: cover XZ
+	// +Y / -Y 面：XZ平面をカバー
 	DrawFaceRect(FVector(0, E.Y, 0), FVector(0, 1, 0), E.X, E.Z);
 	DrawFaceRect(FVector(0, -E.Y, 0), FVector(0, -1, 0), E.X, E.Z);
 
-	// +Z / -Z faces: cover XY
+	// +Z / -Z 面：XY平面をカバー
 	DrawFaceRect(FVector(0, 0, E.Z), FVector(0, 0, 1), E.X, E.Y);
 	DrawFaceRect(FVector(0, 0, -E.Z), FVector(0, 0, -1), E.X, E.Y);
 }
@@ -443,7 +442,7 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	const FBoneContainer& BoneContainer = Output.Pose.GetPose().GetBoneContainer();
 	FTransform ComponentTransform = Output.AnimInstanceProxy->GetComponentTransform();
 
-	// save prev frame BaseBoneSpace2ComponentSpace
+	// 前フレームの BaseBoneSpace2ComponentSpace を保存
 	if (SimulationSpace == EKawaiiPhysicsSimulationSpace::BaseBoneSpace)
 	{
 		if (SimulationBaseBone.IsValidToEvaluate(BoneContainer))
@@ -457,7 +456,7 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		}
 	}
 
-	// Build per-evaluate caches AFTER PrevBaseBoneSpace2ComponentSpace is updated.
+	// PrevBaseBoneSpace2ComponentSpace の更新後に評価ごとのキャッシュを構築する
 	CurrentEvalSimSpaceCache = BuildSimulationSpaceCache(Output, SimulationSpace);
 	bHasCurrentEvalSimSpaceCache = true;
 	CurrentEvalWorldSpaceCache = BuildSimulationSpaceCache(Output, EKawaiiPhysicsSimulationSpace::WorldSpace);
@@ -496,15 +495,14 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	}
 
 #if WITH_EDITOR
-	// sync editing on other Nodes
+	// 他のNodeでの編集を同期する
 	ApplyLimitsDataAsset(BoneContainer);
 	ApplyPhysicsAsset(BoneContainer);
 	ApplyBoneConstraintDataAsset(BoneContainer);
 
-
+	// ライブ編集用（コンパイル前に同期）
 	if (GUnrealEd && !GUnrealEd->IsPlayingSessionInEditor())
 	{
-		// for live editing ( sync before compile )
 		InitializeBoneReferences(BoneContainer);
 	}
 
@@ -536,7 +534,7 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		PreSkelCompTransform = ComponentTransform;
 
 #if !UE_BUILD_SHIPPING
-		// STAT更新 & パフォーマンス警告 / STAT update & performance warning
+		// STAT更新 & パフォーマンス警告
 		SET_DWORD_STAT(STAT_KawaiiPhysics_NumModifyBones, ModifyBones.Num());
 		int32 InterBoneDummyCount = 0;
 		int32 BridgeDummyCount = 0;
@@ -581,7 +579,7 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 
 	}
 
-	// Update each parameter and collision
+	// 各パラメータとコリジョンを更新する
 	if (!bInitPhysicsSettings || bUpdatePhysicsSettingsInGame)
 	{
 		UpdatePhysicsSettingsOfModifyBones();
@@ -593,6 +591,8 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 			bInitPhysicsSettings = true;
 		}
 	}
+
+	// 各コリジョンの更新
 	UpdateSphericalLimits(SphericalLimits, Output, BoneContainer, ComponentTransform);
 	UpdateSphericalLimits(SphericalLimitsData, Output, BoneContainer, ComponentTransform);
 	UpdateCapsuleLimits(CapsuleLimits, Output, BoneContainer, ComponentTransform);
@@ -603,7 +603,6 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	UpdatePlanerLimits(PlanarLimitsData, Output, BoneContainer, ComponentTransform);
 
 	// 共有コリジョンの更新（初期化はPreUpdateでGameThread実行済み）
-	// Update shared collision (initialization done in PreUpdate on GameThread)
 	if ((bSharedCollisionSource || bUseSharedCollision) && SharedCollisionGroupTag.IsValid())
 	{
 		if (bUseSharedCollision && !bSharedCollisionSource && CachedSharedCollisionEntry.IsValid())
@@ -612,12 +611,7 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		}
 	}
 
-	// 入力規模カウンタ & メモリの更新（毎フレーム。負荷=N×L等の相関とダミー膨張の可視化用）。
-	// コライダ配列はここまでに更新済み（Update*Limits / UpdateSharedCollisionLimits）。
-	// 注: 既存のNum*系と同じくSET（複数ノード時は最後にSETしたノード値が表示される）。
-	// Per-frame input-size counters & memory (correlate load = N×L, visualize dummy growth).
-	// Collider arrays are already updated above (Update*Limits / UpdateSharedCollisionLimits).
-	// Note: SET semantics like the existing Num* stats (last node wins when multiple nodes exist).
+	// 入力規模カウンタ & メモリの更新（毎フレーム。負荷=N×L等の相関とダミー膨張の可視化用）
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumSphereColliders, SphericalLimits.Num() + SphericalLimitsData.Num());
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumCapsuleColliders, CapsuleLimits.Num() + CapsuleLimitsData.Num());
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumBoxColliders, BoxLimits.Num() + BoxLimitsData.Num());
@@ -629,23 +623,20 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	SET_MEMORY_STAT(STAT_KawaiiPhysics_ModifyBonesMemory,
 	                ModifyBones.GetAllocatedSize() + MergedBoneConstraints.GetAllocatedSize());
 
-	// Update Bone Pose Transform
 	UpdateModifyBonesPoseTransform(Output, BoneContainer);
-
-	// Apply Sync Bones
 	ApplySyncBones(Output, BoneContainer);
 
-	// Update SkeletalMeshComponent movement in World Space
+	// World SpaceでのSkeletalMeshComponentの移動を更新する
 	UpdateSkelCompMove(Output, ComponentTransform);
 
-	// Simulate Physics and Apply
+	// 物理の荒ぶりを回避するための空回し処理
 	if (bNeedWarmUp && WarmUpFrames > 0)
 	{
 		WarmUp(Output, BoneContainer, ComponentTransform);
 		bNeedWarmUp = false;
 	}
 
-	// SkipSimulate if Teleport in WorldSpace
+	// WorldSpaceでテレポートした場合はシミュレートをスキップする
 	if (SimulationSpace == EKawaiiPhysicsSimulationSpace::WorldSpace &&
 		TeleportType == ETeleportType::TeleportPhysics)
 	{
@@ -658,11 +649,8 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		}
 
 		// テレポート時はサブステップの未消費時間を破棄し、ポーズ補間を次フレームで再初期化
-		// On teleport, flush unconsumed substep time and re-seed pose interpolation next frame
 		SubstepAccumulator = 0.0f;
 		bSubstepPoseInitialized = false;
-		// テレポート後は PreSkelCompTransform を現在へ全消費で進める（繰り越し無し）
-		// After teleport, fully advance PreSkelCompTransform to the current transform (no carry-over)
 		PreSkelCompTransformConsumeFraction = 1.0f;
 	}
 	else
@@ -670,7 +658,7 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		SimulateModifyBones(Output, ComponentTransform);
 	}
 
-	// 計算済みコリジョンをSubsystemに書き込み / Write computed collision to subsystem
+	// 計算済みコリジョンをSubsystemに書き込み
 	if (bSharedCollisionSource && SharedCollisionGroupTag.IsValid() && CachedSourceSlot.IsValid())
 	{
 		WriteSharedCollisionToSubsystem(Output, ComponentTransform);
@@ -679,10 +667,8 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	ApplySimulateResult(Output, BoneContainer, OutBoneTransforms);
 
 	TeleportType = ETeleportType::None;
-	// サブステップで未消費の実時間がある場合、PreSkelCompTransform を消費割合だけ前進させ、未適用の
-	// component 移動を次にステップが走るフレームへ繰り越す（NumSteps==0 では割合0で据え置き）。
-	// Advance PreSkelCompTransform by the consumed fraction so unapplied component movement carries to the next
-	// stepping frame (fraction 0 holds it when NumSteps==0).
+	// サブステップで未消費の実時間がある場合、PreSkelCompTransform を消費割合だけ前進させ、
+	// 未適用のComponent移動を次にステップが走るフレームへ繰り越す（NumSteps==0 では割合0で据え置き）。
 	const float PreSkelCompConsumeFrac = FMath::Clamp(PreSkelCompTransformConsumeFraction, 0.0f, 1.0f);
 	if (PreSkelCompConsumeFrac >= 1.0f - KINDA_SMALL_NUMBER)
 	{
@@ -737,8 +723,6 @@ bool FAnimNode_KawaiiPhysics::IsValidToEvaluate(const USkeleton* Skeleton, const
 bool FAnimNode_KawaiiPhysics::HasPreUpdate() const
 {
 	// CDO上でキャッシュされるため無条件true（共有コリジョン初期化にGameThread PreUpdateが必要）
-	// Must return true unconditionally: cached on CDO at load time (AnimBlueprintGeneratedClass).
-	// Shared collision initialization requires GameThread PreUpdate.
 	return true;
 }
 
@@ -757,10 +741,10 @@ void FAnimNode_KawaiiPhysics::PreUpdate(const UAnimInstance* InAnimInstance)
 	}
 #endif
 
-	// BP APIランタイム変更時の遅延リセット / Deferred reinit from Blueprint API runtime changes
+	// SharedCollisionに対してのランタイム変更時の遅延リセット
 	if (bSharedCollisionNeedsReinit)
 	{
-		// 旧Slotを即座に期限切れ化 / Mark old slot as immediately expired
+		// 旧Slotを即座に期限切れ化
 		if (CachedSourceSlot.IsValid())
 		{
 			CachedSourceSlot->MarkExpired();
@@ -773,8 +757,7 @@ void FAnimNode_KawaiiPhysics::PreUpdate(const UAnimInstance* InAnimInstance)
 		bSharedCollisionNeedsReinit = false;
 	}
 
-	// 共有コリジョンの初期化（GameThreadで実行、TMapへの書き込みはスレッドセーフでないため）
-	// Initialize shared collision on GameThread (TMap mutation is not thread-safe)
+	// 共有コリジョンの初期化（TMapへの書き込みはスレッドセーフでないためGameThreadで実行）
 	if ((bSharedCollisionSource || bUseSharedCollision) && SharedCollisionGroupTag.IsValid())
 	{
 		if (!bSharedCollisionInitialized)
@@ -782,7 +765,6 @@ void FAnimNode_KawaiiPhysics::PreUpdate(const UAnimInstance* InAnimInstance)
 			InitializeSharedCollision(InAnimInstance);
 
 			// 初期化リトライが続く場合に警告ログ（1回のみ）
-			// Warn once if target init keeps retrying (source not found)
 			if (!bSharedCollisionInitialized && !bSharedCollisionInitWarningLogged)
 			{
 				SharedCollisionInitRetryCount++;

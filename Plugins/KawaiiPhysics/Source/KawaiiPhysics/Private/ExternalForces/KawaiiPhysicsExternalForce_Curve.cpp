@@ -53,7 +53,7 @@ void FKawaiiPhysics_ExternalForce_Curve::PreApply(FAnimNode_KawaiiPhysics& Node,
 	else
 	{
 		TArray<FVector> CurveValues;
-		// SubstepCountが0以下でもゼロ除算しないよう最低1にクランプ / Clamp to at least 1 to avoid divide-by-zero
+		// SubstepCountが0以下でもゼロ除算しないよう最低1にクランプ
 		const int32 Steps = FMath::Max(SubstepCount, 1);
 		const float SubStep = Node.GetStepDeltaTime() * TimeScale / Steps;
 

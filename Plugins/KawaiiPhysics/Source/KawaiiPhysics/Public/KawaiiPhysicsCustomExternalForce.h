@@ -19,14 +19,10 @@ public:
 
 public:
 	// 重要 / IMPORTANT (Thread-safety):
-	// PreApply / Apply は FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread から呼び出されるため、
-	// アニメーション・ワーカースレッド上で実行されうる。実装（特に Blueprint）では GameThread 専用 API
-	// （アクター/コンポーネントの破壊・スポーン、ワールドのレイキャスト、UObject ライフサイクル操作など）に
-	// 触れないこと。必要な GameThread 値は事前に取得してメンバへキャッシュし、ここでは読み取りのみ行う。
-	// PreApply / Apply are invoked from EvaluateSkeletalControl_AnyThread and may therefore run on the
-	// animation worker thread. Implementations (especially Blueprint) must NOT touch game-thread-only APIs
-	// (spawning/destroying actors or components, world raycasts, UObject lifecycle, etc.). Cache any required
-	// game-thread values beforehand and only read them here.
+	// PreApply / Apply は EvaluateSkeletalControl_AnyThread から呼ばれ、アニメーション・ワーカースレッドで動きうる。
+	// 実装（特に BP）は GameThread 専用 API（アクター/コンポーネントの破壊・スポーン、レイキャスト、UObject ライフサイクル等）に触れないこと。必要な値は事前にキャッシュし、ここでは読み取りのみ。
+	// PreApply / Apply may run on the animation worker thread (called from EvaluateSkeletalControl_AnyThread).
+	// Implementations (especially Blueprint) must NOT touch game-thread-only APIs (spawn/destroy actors/components, raycasts, UObject lifecycle); cache needed values beforehand and only read them here.
 	UFUNCTION(BlueprintNativeEvent)
 	void PreApply(UPARAM(ref) FAnimNode_KawaiiPhysics& Node,
 	              const USkeletalMeshComponent* SkelComp);

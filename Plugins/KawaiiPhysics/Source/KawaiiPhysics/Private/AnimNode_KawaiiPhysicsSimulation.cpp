@@ -85,18 +85,15 @@ void FAnimNode_KawaiiPhysics::SimulateModifyBones(FComponentSpacePoseContext& Ou
 	}
 
 	// このフレームの実dtを保持（サブステップ中は DeltaTime を FixedDt として扱うため別保存）
-	// Keep this frame's real dt (DeltaTime is treated as FixedDt during substeps)
 	FrameDeltaTime = DeltaTime;
 
 	const USkeletalMeshComponent* SkelComp = Output.AnimInstanceProxy->GetSkelMeshComponent();
 
-	// Save Prev/Pose Info , Check SkipSimulate
+	// Prev/Pose 情報を保存し、SkipSimulate を判定
 	for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
 	{
 		// bridge dummyは縦親(ParentIndex<0)を持たないが、コリジョン代理として非skipにする
 		// （Simulate()/長さ復元は別途スキップ。下のParentIndex<0分岐に落ちると誤ってskip&Pose固定される）
-		// Bridge dummies have no vertical parent but must stay non-skip so collision runs on them
-		// (Simulate()/length-restore are skipped separately; the ParentIndex<0 branch below must not catch them)
 		if (Bone.bBridgeDummy)
 		{
 			Bone.bSkipSimulate = false;
@@ -113,8 +110,6 @@ void FAnimNode_KawaiiPhysics::SimulateModifyBones(FComponentSpacePoseContext& Ou
 		{
 			// root: kinematic。実ポーズ追従（PrevLocation/Location更新）は SimulateOnce 内で、
 			// サブステップ補間後のポーズに対して毎ステップ行う。
-			// root: kinematic; the actual pose-follow (PrevLocation/Location update) happens inside
-			// SimulateOnce each step, against the per-substep interpolated pose.
 			Bone.bSkipSimulate = true;
 			continue;
 		}
@@ -133,7 +128,7 @@ void FAnimNode_KawaiiPhysics::SimulateModifyBones(FComponentSpacePoseContext& Ou
 		GravityInSimSpace *= FMath::Abs(UPhysicsSettings::Get()->DefaultGravityZ);
 	}
 
-	// SimpleExternalForce: compute once in SimulationSpace (avoid per-bone conversions)
+	// SimpleExternalForce: SimulationSpace で一度だけ計算（ボーンごとの空間変換を避ける）
 	if (!SimpleExternalForce.IsNearlyZero())
 	{
 		if (bUseWorldSpaceSimpleExternalForce)
@@ -155,7 +150,7 @@ void FAnimNode_KawaiiPhysics::SimulateModifyBones(FComponentSpacePoseContext& Ou
 	}
 
 	// External Force : PreApply
-	// NOTE: if use foreach, you may get issue ( Array has changed during ranged-for iteration )
+	// 注: foreach を使うと問題が起きうる（ranged-for 中に配列が変化する）
 	for (int i = 0; i < CustomExternalForces.Num(); ++i)
 	{
 		if (CustomExternalForces[i])
@@ -182,8 +177,6 @@ void FAnimNode_KawaiiPhysics::SimulateModifyBones(FComponentSpacePoseContext& Ou
 
 	// 現フレームのポーズ目標をスナップショット（サブステップ中 PoseLocation を補間で上書きするため退避）。
 	// 初回/リセット後は前フレーム値を現在値で初期化（補間で飛ばないように）。
-	// Snapshot this frame's pose target (PoseLocation is overwritten by interpolation during substeps).
-	// On first frame / after reset, seed the previous-frame target with the current value (avoid a jump).
 	for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
 	{
 		Bone.CurrentPoseLocation = Bone.PoseLocation;
@@ -202,30 +195,23 @@ void FAnimNode_KawaiiPhysics::SimulateModifyBones(FComponentSpacePoseContext& Ou
 		bInSubstep = false;
 		SimulateOnce(Output, ComponentTransform, Scene, SkelComp);
 		DeltaTimeOld = DeltaTime;
-		PreSkelCompTransformConsumeFraction = 1.0f; // legacyは毎フレーム全消費 / legacy consumes the whole frame
+		PreSkelCompTransformConsumeFraction = 1.0f; // legacyは毎フレーム全消費
 	}
 	else
 	{
 		// ===== 固定タイムステップ・サブステップ（§4） =====
 		const float FixedDt = 1.0f / GetEffectiveTargetFramerate();
-		// SkelCompMove は前回 PreSkelCompTransform 前進時からの全移動で、クランプ前の蓄積実時間 RawElapsed を表す。
-		// SkelCompMove is the full movement since the last PreSkelCompTransform advance, representing the pre-clamp RawElapsed.
+		// クランプ前の蓄積実時間
 		const float RawElapsed = FMath::Max(SubstepAccumulator + FrameDeltaTime, KINDA_SMALL_NUMBER);
-		// spiral of death 防止：超過分は破棄 / clamp to avoid spiral of death (drop excess time)
+		// spiral of death 防止：超過分は破棄
 		SubstepAccumulator = FMath::Min(RawElapsed, MaxSubstepsCached * FixedDt);
-		const float DroppedTime = RawElapsed - SubstepAccumulator; // クランプで破棄された時間 / time dropped by the clamp
+		const float DroppedTime = RawElapsed - SubstepAccumulator; // クランプで破棄された時間
 		const int32 NumSteps = FMath::FloorToInt(SubstepAccumulator / FixedDt);
 		SubstepAccumulator -= NumSteps * FixedDt;
 
-		// world移動を各サブステップへ分配。分配係数は RawElapsed 基準にし、ステップ未消費(NumSteps==0)を跨いでも
-		// 取りこぼし/二重適用しない。各ステップ FixedDt/RawElapsed を適用するので合計は消費割合分のみ。
-		// Distribute world movement; the fraction is relative to RawElapsed so movement is neither dropped nor
-		// double-applied across NumSteps==0 frames. Each step applies FixedDt/RawElapsed, so the total is the consumed share.
+		// world移動を各サブステップへ分配。RawElapsed 基準にし、ステップ未消費(NumSteps==0)でも取りこぼし/二重適用しない。
 		const float MoveFrac = FixedDt / RawElapsed;
-		// PreSkelCompTransform を「消費(NumSteps*FixedDt)＋破棄(DroppedTime)」割合だけ前進させ、残り(Remainder)を繰り越す。
-		// クランプ時は破棄分の component 移動も「未消費として復活」させない（超過分は破棄と整合）。
-		// Advance PreSkelCompTransform by the consumed+dropped fraction, carrying only the remainder. On clamp, the
-		// dropped component movement is not revived later (consistent with dropping the excess time).
+		// PreSkelCompTransform を「消費(NumSteps*FixedDt)＋破棄(DroppedTime)」割合だけ前進させ残りを繰り越す。破棄分は復活させない（超過分破棄と整合）。
 		PreSkelCompTransformConsumeFraction =
 			FMath::Clamp((NumSteps * FixedDt + DroppedTime) / RawElapsed, 0.0f, 1.0f);
 		const FVector FullSkelCompMove = SkelCompMoveVector;
@@ -237,7 +223,6 @@ void FAnimNode_KawaiiPhysics::SimulateModifyBones(FComponentSpacePoseContext& Ou
 		for (int32 SubstepIndex = 0; SubstepIndex < NumSteps; ++SubstepIndex)
 		{
 			// 注: ローカル名は基底クラスのメンバ Alpha（ブレンド係数）を隠さないよう SubstepAlpha とする
-			// Note: named SubstepAlpha to avoid shadowing the base-class member Alpha (blend weight)
 			const float SubstepAlpha = static_cast<float>(SubstepIndex + 1) / static_cast<float>(NumSteps);
 
 			// ポーズ目標をサブステップ補間（§5）
@@ -282,7 +267,6 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 {
 	// root bone（ParentIndex<0）の kinematic follow: （補間済み）ポーズへ追従。
 	// 元の skip ループから移設。サブステップ毎に補間ポーズへ追従させる。
-	// root bones follow the (interpolated) pose. Moved out of the skip loop so it runs every substep.
 	for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
 	{
 		if (Bone.ParentIndex < 0 && !Bone.bBridgeDummy && !(Bone.BoneRef.BoneIndex < 0 && !Bone.bDummy))
@@ -303,14 +287,12 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 		}
 
 		// コリジョン専用モード: Simulate()をスキップ（コリジョンとbone length restorationは後で実行）
-		// Collision-only mode: skip physics simulation, position from real bones after loop
 		if (Bone.bInterBoneDummy && bBoneSubdivisionCollisionOnly)
 		{
 			continue;
 		}
 
 		// bridge dummyは常にSimulate()をスキップ（縦親が無くModifyBones[ParentIndex]参照でクラッシュする）
-		// Bridge dummies always skip Simulate() (no vertical parent → ModifyBones[Bone.ParentIndex] would crash)
 		if (Bone.bBridgeDummy)
 		{
 			continue;
@@ -320,7 +302,6 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 	}
 
 	// コリジョン専用モード: 全実ボーンのシミュレーション完了後、シミュレーション済みのLocation間にダミーを配置
-	// Collision-only: position dummies between simulated real bones (not PoseLocation)
 	if (bBoneSubdivisionCollisionOnly)
 	{
 		for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
@@ -344,9 +325,7 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 	}
 
 	// bridge dummy（横方向Constraintのコリジョン代理）を端点間で配置。
-	// bBoneSubdivisionCollisionOnlyに依らず常に実行し、縦dummyの後（より大きいindex）に走るため端点は配置済み。
-	// Position bridge dummies (horizontal-constraint collision proxies) between their two endpoints.
-	// Always runs (independent of bBoneSubdivisionCollisionOnly); they have higher indices than vertical dummies, so endpoints are already placed.
+	// bBoneSubdivisionCollisionOnlyに依らず常に実行。縦dummyの後（大きいindex）に走るため端点は配置済み。
 	{
 		SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_BridgeDummy);
 		const FBoneContainer& BoneContainer = Output.Pose.GetPose().GetBoneContainer();
@@ -367,26 +346,18 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 			const FKawaiiPhysicsModifyBone& EndA = ModifyBones[Bone.InterBoneRealParentIndex];
 			const FKawaiiPhysicsModifyBone& EndB = ModifyBones[Bone.InterBoneRealChildIndex];
 
-			// LOD安全: 実ボーン端点がLODでカルされている場合はproxyをスキップ（staleな端点での誤配置を防ぐ）
-			// LOD safety: skip when a real-bone endpoint is culled by the current LOD (avoid placing from stale endpoints)
+			// LOD安全: 実ボーン端点がLODでカルされていればproxyを無効化し後続コリジョンループからも除外（stale位置で誤判定しない）。
+			// 次フレーム冒頭のダミー配置ループで bSkipSimulate=false に戻り再評価される。
 			if ((!EndA.bDummy && EndA.BoneRef.BoneIndex >= 0 && EndA.BoneRef.GetCompactPoseIndex(BoneContainer) < 0) ||
 				(!EndB.bDummy && EndB.BoneRef.BoneIndex >= 0 && EndB.BoneRef.GetCompactPoseIndex(BoneContainer) < 0))
 			{
-				// 端点がLODでカル → proxyを無効化し、後続のコリジョンループからも除外する（stale位置で当たらないように）。
-				// 次フレーム冒頭のダミー配置ループでbSkipSimulate=falseに戻り再評価される。
-				// Endpoint culled by LOD -> disable the proxy and exclude it from the following collision loop
-				// (so it doesn't collide at a stale position). The dummy-placement loop at the start of the next
-				// frame resets bSkipSimulate=false and re-evaluates.
 				Bone.bSkipSimulate = true;
 				continue;
 			}
 
 			Bone.PrevLocation = Bone.Location;
 			Bone.Location = FMath::Lerp(EndA.Location, EndB.Location, Bone.InterBoneAlpha);
-			// LERP基準位置をPoseLocationに退避（コリジョン後の押し出し量 = Location - PoseLocation を測るため。
-			// bridge dummyのPoseLocationは他で未使用なので流用）。
-			// Stash the LERP base in PoseLocation so the post-collision push = (Location - PoseLocation) can be measured.
-			// PoseLocation is otherwise unused for bridge dummies.
+			// LERP基準位置をPoseLocationに退避（押し出し量 = Location - PoseLocation を測るため。bridge dummyのPoseLocationは他で未使用）。
 			Bone.PoseLocation = Bone.Location;
 		}
 	}
@@ -418,9 +389,6 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 	// NOTE: 形状ごとにループを分けると ModifyBones を複数回走査してキャッシュ効率が落ちるため
 	// （ボーン数が多いケースで負荷増）、従来どおりボーン外側の1パスで全形状を処理する。
 	// World判定の時間は関数内の既存STAT（STAT_KawaiiPhysics_WorldCollision）で計測する。
-	// NOTE: keep a single per-bone pass for all shapes. Splitting per shape would re-traverse
-	// ModifyBones multiple times and hurt cache locality (a regression for high bone counts).
-	// World-check time is measured by the existing STAT inside AdjustByWorldCollision.
 	int32 NumWorldChecks = 0;
 	for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
 	{
@@ -440,7 +408,7 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 		AdjustByPlanerCollision(Bone, PlanarLimits);
 		AdjustByPlanerCollision(Bone, PlanarLimitsData);
 
-		// 共有コリジョン / Shared collision from other KawaiiPhysics nodes
+		// 共有コリジョン（他の KawaiiPhysics ノードから）
 		if (bUseSharedCollision && !bSharedCollisionSource)
 		{
 			AdjustBySphereCollision(Bone, SharedSphericalLimits);
@@ -452,31 +420,18 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 		if (bAllowWorldCollision)
 		{
 			AdjustByWorldCollision(Output, Bone, SkelComp);
-			++NumWorldChecks; // 発行したワールドスイープ回数 / world sweeps issued this frame
+			++NumWorldChecks; // 発行したワールドスイープ回数
 		}
 	}
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumWorldCollisionChecks, NumWorldChecks);
 
-	// bridge dummy のコリジョン変位を端点ボーンへ直接転送（実ボーンを押し出すフィードバックの本体）。
-	// コリジョン後・Constraint/length復元前に実行。Push = Location(押し出し後) - PoseLocation(上のLERP配置で退避したLERP基準)。
-	// 端点へ距離比 (1-α):α で配分し、Scaleで強さを調整。端点が縦dummyの場合も後段のlength復元で実子へ伝播する。
-	// Direct displacement transfer: push the bridge dummy's collision displacement into its endpoint bones (this is
-	// what makes a collider moving between columns actually move the cloth). Runs after collision, before constraints/
-	// length restore. Push = Location - PoseLocation (LERP base stashed above during bridge-dummy placement),
-	// distributed (1-alpha):alpha, scaled.
+	// bridge dummy のコリジョン変位を端点ボーンへ転送（実ボーンを押し出すフィードバック本体）。コリジョン後・Constraint/length復元前。
+	// Push = Location(押し出し後) - PoseLocation(LERP基準)。端点へ距離比 (1-α):α で配分し Scale で強さ調整。端点が縦dummyでも後段length復元で実子へ伝播。
 	if (BoneConstraintSubdivisionCount > 0 && BoneConstraintSubdivisionFeedbackScale > 0.0f)
 	{
 		SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_BridgeDummy);
-		// 端点ごとに「重み付き押し出し量の合計」と「重みの合計」を集計し、最後に divisor=max(1,重み合計) で割る。
-		// 寄与が少ない（重み合計<=1, 局所接触の通常ケース）ときは単純加算と同一の挙動を保ち、
-		// 多数のdummyが同じ端点を押す病的ケースでのみ加重平均化してN倍のオーバーシュート/発振を防ぐ。
-		// Accumulate per-endpoint weighted push and total weight, then divide by max(1, total weight).
-		// When few dummies contribute (weight <= 1, typical localized contact) this equals plain additive transfer;
-		// only when many dummies push the same endpoint does it average out, preventing N-fold overshoot/oscillation.
-		// 端点index直アクセスのスクラッチ配列（端点indexはModifyBones数で上限）。Reset+SetNumZeroedで
-		// 既存allocationを再利用しつつ全要素ゼロ化（TMapの確保・ハッシュをホットパスから排除）。
-		// Scratch arrays indexed directly by endpoint index (bounded by ModifyBones count). Reset + SetNumZeroed
-		// reuses the existing allocation while zeroing all elements (removes the TMap alloc/hash from the hot path).
+		// 端点ごとに押し出し量と重みを集計し divisor=max(1,重み合計) で割る。多数のdummyが同じ端点を押す病的ケースのみ加重平均でN倍オーバーシュート/発振を防ぐ。
+		// スクラッチ配列は端点index直アクセス。Reset+SetNumZeroed で再利用し TMap 確保/ハッシュをホットパスから排除。
 		const int32 NumBones = ModifyBones.Num();
 		BridgeFeedbackPushScratch.Reset();
 		BridgeFeedbackPushScratch.SetNumZeroed(NumBones);
@@ -495,7 +450,7 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 				continue;
 			}
 
-			const FVector Push = Bone.Location - Bone.PoseLocation; // コリジョンによる押し出し量 / collision displacement
+			const FVector Push = Bone.Location - Bone.PoseLocation; // コリジョンによる押し出し量
 			if (Push.IsNearlyZero())
 			{
 				continue;
@@ -504,7 +459,7 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 			const float A = Bone.InterBoneAlpha;
 			const int32 E1 = Bone.InterBoneRealParentIndex;
 			const int32 E2 = Bone.InterBoneRealChildIndex;
-			const float W1 = 1.0f - A; // 端点1に近いほど寄与大 / closer to endpoint1 => larger weight
+			const float W1 = 1.0f - A; // 端点1に近いほど寄与大
 			const float W2 = A;
 
 			BridgeFeedbackPushScratch[E1] += Push * W1;
@@ -538,7 +493,6 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 	}
 
 	// Adjust by Limits and Bone Length（角度制限 + 平面制約 + ボーン長復元のO(N)ループをまとめて計測）
-	// Adjust by limits and bone length (measure the angle-limit + planar-constraint + length-restore O(N) loop)
 	{
 		SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_AdjustByLimitsAndLength);
 		for (FKawaiiPhysicsModifyBone& Bone : ModifyBones)
@@ -550,8 +504,6 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 
 			// bridge dummyは縦親を持たないため長さ/角度復元をスキップ（ParentIndex=-1参照でクラッシュ）。
 			// 位置は直前のconstraint solveで確定済みで、次フレーム冒頭で端点間に再LERPされる。
-			// Bridge dummies have no vertical parent → skip length/angle restore (would deref ParentIndex=-1).
-			// Their position is finalized by the preceding constraint solve and re-LERP'd next frame.
 			if (Bone.bBridgeDummy)
 			{
 				continue;
@@ -571,17 +523,14 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 		}
 	}
 	// 注: DeltaTimeOld は呼び出し元 SimulateModifyBones（legacy=DeltaTime / substep=FixedDt）で設定
-	// Note: DeltaTimeOld is set by the caller SimulateModifyBones (legacy=DeltaTime / substep=FixedDt)
 }
 
 FTransform FAnimNode_KawaiiPhysics::ResolveExternalForceBoneTransform(
 	FComponentSpacePoseContext& Output, const FKawaiiPhysicsModifyBone& Bone,
 	const FKawaiiPhysicsModifyBone& ParentBone) const
 {
-	// dummy（inter-bone / 分割末端）は実親ボーンのTransformを使用（親が別dummyでBoneRef空のときのクラッシュ防止）。
-	// 非dummyでもLODでcompact poseから外れた実ボーンは無効indexになるため、両者ともガードする。
-	// Dummies use the real parent transform (avoids empty-BoneRef crash); non-dummy real bones can also be
-	// LOD-culled (invalid compact-pose index), so guard both. Invalid -> Identity (no crash).
+	// dummyは実親ボーンのTransformを使用（親が別dummyでBoneRef空のときのクラッシュ防止）。
+	// 非dummyもLODでcompact poseから外れると無効indexになるため両者ガードし、無効時は Identity。
 	const FKawaiiPhysicsModifyBone& TransformBone =
 		Bone.bDummy
 			? (ModifyBones.IsValidIndex(Bone.InterBoneRealParentIndex)
@@ -594,7 +543,7 @@ FTransform FAnimNode_KawaiiPhysics::ResolveExternalForceBoneTransform(
 	{
 		return GetBoneTransformInSimSpace(Output, TransformCPI);
 	}
-	// 無効CompactPose(LOD等) → Identity / invalid CompactPose -> Identity
+	// 無効CompactPose(LOD等) → Identity
 	return FTransform::Identity;
 }
 
@@ -608,7 +557,6 @@ void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSc
 	const FKawaiiPhysicsModifyBone& ParentBone = ModifyBones[Bone.ParentIndex];
 
 	// wind（Output依存）を計算。減衰後の速度に足し込む寄与として ComputeVerletStepVelocity へ渡す。
-	// Wind (Output-dependent). Passed to ComputeVerletStepVelocity as a contribution added onto the post-damping velocity.
 	FVector WindVelocity = FVector::ZeroVector;
 	if (bEnableWind && Scene)
 	{
@@ -616,13 +564,9 @@ void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSc
 	}
 
 	// このステップの速度を作る（速度再構成 → damping → +wind → gravity）。
-	// Build this step's velocity (reconstruct -> damping -> +wind -> gravity).
 	FVector Velocity = ComputeVerletStepVelocity(Bone, WindVelocity);
 
-	// ユーザー外力に「実際の速度」を渡す（gravity の後・位置更新の前）。ApplyToVelocity は
-	// InOutVelocity を読む実装もあり得るため、集約せずここで実速度に対して呼ぶ。
-	// Hand the real velocity to user external forces (after gravity, before position integration).
-	// ApplyToVelocity may read InOutVelocity, so it runs on the real velocity here (not on a pre-gathered accumulator).
+	// ユーザー外力に実速度を渡す（gravity の後・位置更新の前）。ApplyToVelocity が InOutVelocity を読む実装もあり得るため実速度に対して呼ぶ。
 	for (int i = 0; i < ExternalForces.Num(); ++i)
 	{
 		if (ExternalForces[i].IsValid())
@@ -635,10 +579,10 @@ void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSc
 		}
 	}
 
-	// 速度のぶんだけ位置を進める。 / Move the position by the velocity.
+	// 速度のぶんだけ位置を進める。
 	IntegrateVerletStepPosition(Bone, Velocity);
 
-	// Simple External Force（速度を経由しない位置オフセット） / position offset, not via velocity.
+	// Simple External Force（速度を経由しない位置オフセット）
 	ApplySimpleExternalForce(Bone);
 
 	// Follow World Movement
@@ -646,7 +590,6 @@ void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSc
 		&& TeleportType != ETeleportType::TeleportPhysics)
 	{
 		// BaseBoneSpace は Output 依存の空間変換が必要なため、別関数に切り出さずここで実行。
-		// BaseBoneSpace needs Output-dependent space conversions, so it is handled inline here.
 		// Follow Translation
 		const FVector SkelCompMoveVectorBBS =
 			ConvertSimulationSpaceVector(Output, EKawaiiPhysicsSimulationSpace::ComponentSpace,
@@ -662,12 +605,12 @@ void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSc
 	}
 	else
 	{
-		// ComponentSpace / WorldSpace（BaseBoneSpace 以外） / Component & World space (non-BaseBoneSpace).
+		// ComponentSpace / WorldSpace（BaseBoneSpace 以外）
 		ApplyWorldMoveFollowNonBaseBone(Bone);
 	}
 
 	// External Force
-	// NOTE: if use foreach, you may get issue ( Array has changed during ranged-for iteration )
+	// 注: foreach を使うと問題が起きうる（ranged-for 中に配列が変化する）
 	for (int i = 0; i < CustomExternalForces.Num(); ++i)
 	{
 		if (CustomExternalForces[i] && CustomExternalForces[i]->bIsEnabled)
@@ -697,43 +640,38 @@ void FAnimNode_KawaiiPhysics::Simulate(FKawaiiPhysicsModifyBone& Bone, const FSc
 		}
 	}
 
-	// Pull to Pose Location（剛性） / Pull toward pose location (stiffness).
+	// Pull to Pose Location（剛性）
 	ApplyStiffnessPull(Bone, ParentBone, Exponent);
 }
 
 // ============================================================================
 //  物理計算の各ステップ（引数に FComponentSpacePoseContext を取らない）。Simulate() から呼ばれる。
-//  Each physics step; takes no FComponentSpacePoseContext. Called from Simulate().
 //  注: ここを変更したら、Simulate() 内の wind/ApplyToVelocity の呼び出し位置との整合も確認すること。
-//  NOTE: if you change these, re-check consistency with the wind/ApplyToVelocity call sites in Simulate().
 // ============================================================================
 
 FVector FAnimNode_KawaiiPhysics::ComputeVerletStepVelocity(FKawaiiPhysicsModifyBone& Bone,
                                                      const FVector& WindVelocity)
 {
-	// Move using Velocity( = movement amount in pre frame ) and Damping
 	// 速度は前ステップ変位を DeltaTimeOld で割って再構成。固定サブステップ時 DeltaTimeOld=FixedDt。
-	// Velocity is reconstructed from the previous step's displacement / DeltaTimeOld (= FixedDt while substepping).
 	FVector Velocity = (Bone.Location - Bone.PrevLocation) / FMath::Max(DeltaTimeOld, KINDA_SMALL_NUMBER);
 	Bone.PrevLocation = Bone.Location;
 
 	// 毎ステップ生の damping 係数（固定サブステップ化でフレームレート依存は解消済み）。
-	// Raw per-step damping (frame-rate dependence is resolved by fixed substepping).
 	Velocity *= (1.0f - Bone.PhysicsSettings.Damping);
 
-	// wind（呼び出し元で計算済み） / wind (computed by the caller).
+	// wind（呼び出し元で計算済み）
 	Velocity += WindVelocity;
 
-	// Gravity (apply just after wind; keep legacy compatibility via separate position term)
+	// Gravity（wind の直後に適用。位置項を分けることで legacy 互換を保つ）
 	const float StepDt = GetStepDeltaTime();
 	if (!bUseLegacyGravity)
 	{
-		// AnimDynamics-like: integrate acceleration into velocity
+		// AnimDynamics 風: 加速度を速度へ積分
 		Velocity += GravityInSimSpace * StepDt;
 	}
 	else
 	{
-		// Legacy gravity: add 0.5 * g * dt^2 to position
+		// Legacy gravity: 0.5 * g * dt^2 を位置へ加算
 		Bone.Location += 0.5 * GravityInSimSpace * StepDt * StepDt;
 	}
 
@@ -742,7 +680,7 @@ FVector FAnimNode_KawaiiPhysics::ComputeVerletStepVelocity(FKawaiiPhysicsModifyB
 
 void FAnimNode_KawaiiPhysics::IntegrateVerletStepPosition(FKawaiiPhysicsModifyBone& Bone, const FVector& Velocity)
 {
-	// Integrate position from velocity
+	// 速度から位置を積分
 	Bone.Location += Velocity * GetStepDeltaTime();
 }
 
@@ -750,8 +688,6 @@ void FAnimNode_KawaiiPhysics::ApplySimpleExternalForce(FKawaiiPhysicsModifyBone&
 {
 	// Simple External Force（速度を経由しない位置オフセット。SimulateModifyBones でキャッシュ済み）。
 	// world-move / stiffness と同じ「位置空間の後処理」なので Verlet ステップから分離している。
-	// Simple external force: a position offset that does NOT go through Velocity (cached in SimulateModifyBones).
-	// Split out from the Verlet step because it is a position-space post-op like world-move / stiffness.
 	if (!SimpleExternalForceInSimSpace.IsNearlyZero())
 	{
 		Bone.Location += SimpleExternalForceInSimSpace * GetStepDeltaTime();
@@ -761,7 +697,6 @@ void FAnimNode_KawaiiPhysics::ApplySimpleExternalForce(FKawaiiPhysicsModifyBone&
 void FAnimNode_KawaiiPhysics::ApplyWorldMoveFollowNonBaseBone(FKawaiiPhysicsModifyBone& Bone)
 {
 	// Follow World Movement（ComponentSpace/WorldSpace のみ。BaseBoneSpaceは Simulate() で別処理）
-	// World-movement follow for Component/World space only (BaseBoneSpace handled inline in Simulate()).
 	if (SimulationSpace != EKawaiiPhysicsSimulationSpace::WorldSpace
 		&& TeleportType != ETeleportType::TeleportPhysics)
 	{
@@ -823,10 +758,7 @@ void FAnimNode_KawaiiPhysics::WarmUp(FComponentSpacePoseContext& Output, const F
 {
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_WarmUp);
 
-	// サブステップ有効時は、各ウォームアップ反復がちょうど1固定ステップになるよう DeltaTime=FixedDt とし、
-	// アキュムレータを退避（ウォームアップ分を本流の蓄積に混ぜない）。ポーズは現値固定で安定化させる。
-	// When substepping, force DeltaTime = FixedDt so each warm-up iteration runs exactly one fixed step,
-	// and isolate the accumulator from the main loop. Pose is held at the current value to settle.
+	// サブステップ有効時は各反復がちょうど1固定ステップになるよう DeltaTime=FixedDt とし、SubstepAccumulator（次フレームへ繰り越す端数時間）を退避（warmup分を本来のフレームの時間蓄積に混ぜない）。
 	const UKawaiiPhysicsDeveloperSettings* KawaiiSettings = GetDefault<UKawaiiPhysicsDeveloperSettings>();
 	const bool bSubstep = KawaiiSettings && KawaiiSettings->bUseFixedSubstepping;
 	const float SavedDeltaTime = DeltaTime;
@@ -919,7 +851,7 @@ void FAnimNode_KawaiiPhysics::ApplySimulateResult(FComponentSpacePoseContext& Ou
 		return BoneTransform.BoneIndex < 0;
 	});
 
-	// for check in FCSPose<PoseType>::LocalBlendCSBoneTransforms
+	// FCSPose<PoseType>::LocalBlendCSBoneTransforms 内のチェック用
 	OutBoneTransforms.Sort(FCompareBoneTransformIndex());
 }
 
