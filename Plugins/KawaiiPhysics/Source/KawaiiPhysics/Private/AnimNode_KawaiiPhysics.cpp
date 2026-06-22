@@ -595,24 +595,23 @@ void FAnimNode_KawaiiPhysics::PreUpdate(const UAnimInstance* InAnimInstance)
 	}
 
 	// 共有コリジョンの初期化（TMapへの書き込みはスレッドセーフでないためGameThreadで実行）
-	if ((bSharedCollisionSource || bUseSharedCollision) && SharedCollisionGroupTag.IsValid())
+	if (!bSharedCollisionInitialized
+		&& (bSharedCollisionSource || bUseSharedCollision)
+		&& SharedCollisionGroupTag.IsValid())
 	{
-		if (!bSharedCollisionInitialized)
-		{
-			InitializeSharedCollision(InAnimInstance);
+		InitializeSharedCollision(InAnimInstance);
 
-			// 初期化リトライが続く場合に警告ログ（1回のみ）
-			if (!bSharedCollisionInitialized && !bSharedCollisionInitWarningLogged)
+		// 初期化リトライが続く場合に警告ログ（1回のみ）
+		if (!bSharedCollisionInitialized && !bSharedCollisionInitWarningLogged)
+		{
+			SharedCollisionInitRetryCount++;
+			if (SharedCollisionInitRetryCount > CVarSharedCollisionInitRetryThreshold.GetValueOnGameThread())
 			{
-				SharedCollisionInitRetryCount++;
-				if (SharedCollisionInitRetryCount > CVarSharedCollisionInitRetryThreshold.GetValueOnGameThread())
-				{
-					KAWAII_LOG_NODE_WARNING(LogKawaiiPhysics,
-						TEXT("SharedCollision: Target could not find source entry for tag [%s]. "
-							"Ensure a source node with matching tag exists in the same actor/child-actor family."),
-						*SharedCollisionGroupTag.ToString());
-					bSharedCollisionInitWarningLogged = true;
-				}
+				KAWAII_LOG_NODE_WARNING(LogKawaiiPhysics,
+					TEXT("SharedCollision: Target could not find source entry for tag [%s]. "
+						"Ensure a source node with matching tag exists in the same actor/child-actor family."),
+					*SharedCollisionGroupTag.ToString());
+				bSharedCollisionInitWarningLogged = true;
 			}
 		}
 	}
