@@ -26,13 +26,13 @@ void FKawaiiPhysicsSyncTarget::Apply(TArray<FKawaiiPhysicsModifyBone>& ModifyBon
 {
 	if (ModifyBoneIndex < 0 || !ModifyBones.IsValidIndex(ModifyBoneIndex))
 	{
-		return;;
+		return;
 	}
 
 	FKawaiiPhysicsModifyBone& Bone = ModifyBones[ModifyBoneIndex];
 	if (Bone.bSkipSimulate)
 	{
-		return;;
+		return;
 	}
 
 	// // Apply Alpha per target
@@ -48,15 +48,15 @@ void FKawaiiPhysicsSyncTarget::Apply(TArray<FKawaiiPhysicsModifyBone>& ModifyBon
 		const FVector NewPoseLocation = Bone.PoseLocation + ScaledTranslation;
 		if (ParentBone.bInterBoneDummy)
 		{
-			// 即時親が inter-bone dummy の場合、その Pose は Apply ループ後の UpdateSubdivisionDummyPoseAfterSyncBones()
-			// まで stale。stale dummy を基準に長さ拘束すると剛体/非剛体とも歪む。
-			// dummy は実祖父 gp と本ボーン child を InterBoneAlpha で内分する点なので |child-dummy| = (1-alpha)*|child-gp|。
-			// よって実祖父 gp を基準に距離 BoneLength/(1-alpha) で拘束すれば、stale を使わず長さを正しく保存できる
-			// （root+child 同一 delta の剛体移動でも、attenuation/curve で delta が異なる非剛体でも segment 長を維持）。
-			// The immediate parent is an inter-bone dummy whose pose is stale until the post-apply re-interpolation.
-			// The dummy divides gp(real grandparent)..child by InterBoneAlpha, so |child-dummy| = (1-alpha)*|child-gp|.
-			// Constrain against gp at distance BoneLength/(1-alpha): preserves segment length without the stale dummy,
-			// for both rigid (root+child same delta) and non-rigid (attenuation/curve) sync.
+			// 解決したい問題: childの長さ拘束を「すぐ上の親」基準で行うと、その親が分割dummy(コリジョン用に親子間へ
+			// 挿入した中間ボーン)の場合に伸縮バグが出る。dummyの位置はこの時点では古いまま(後段で再計算される)で、
+			// それを基準にすると長さが合わないため。
+			// 対策: dummyを飛ばし、その1つ上＝本来の親ボーン(=祖父)を基準に拘束する。dummyは祖父とchildをInterBoneAlphaで
+			// 内分するので |child-dummy| = (1-alpha)*|祖父-child| → 距離 BoneLength/(1-alpha) で拘束すれば古いdummyを使わず長さを保てる。
+			// Problem: constraining the child against its immediate parent stretches the bone when that parent is a
+			// subdivision dummy (inserted between parent and child for collision) whose position is still old here
+			// (recomputed later). Fix: skip the dummy and constrain against the bone above it (the real parent =
+			// grandparent) at distance BoneLength/(1-alpha); the dummy splits grandparent..child by InterBoneAlpha.
 			const float OneMinusAlpha = 1.0f - ParentBone.InterBoneAlpha;
 			const int32 GrandParentIndex = ParentBone.InterBoneRealParentIndex;
 			if (OneMinusAlpha > KINDA_SMALL_NUMBER && ModifyBones.IsValidIndex(GrandParentIndex))
