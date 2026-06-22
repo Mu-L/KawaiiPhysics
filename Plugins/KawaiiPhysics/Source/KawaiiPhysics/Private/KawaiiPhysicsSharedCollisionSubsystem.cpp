@@ -19,28 +19,26 @@ DECLARE_CYCLE_STAT(TEXT("KawaiiPhysics_SharedCollision_Tick"), STAT_KawaiiPhysic
 DECLARE_DWORD_COUNTER_STAT(TEXT("KawaiiPhysics_SharedCollision_NumEntries"), STAT_KawaiiPhysics_SharedCollision_NumEntries, STATGROUP_Anim);
 DECLARE_DWORD_COUNTER_STAT(TEXT("KawaiiPhysics_SharedCollision_NumSlots"), STAT_KawaiiPhysics_SharedCollision_NumSlots, STATGROUP_Anim);
 
-namespace
+AActor* UKawaiiPhysicsSharedCollisionSubsystem::GetFamilyRoot(AActor* Actor)
 {
-	AActor* GetSharedCollisionFamilyRoot(AActor* Actor)
+	// アタッチポインタを辿るだけのread-only処理（UObject変更なし）。任意スレッドから呼べる
+	AActor* Root = Actor;
+	while (Root)
 	{
-		AActor* Root = Actor;
-		while (Root)
+		AActor* Parent = Root->GetAttachParentActor();
+		if (!Parent)
 		{
-			AActor* Parent = Root->GetAttachParentActor();
-			if (!Parent)
-			{
-				Parent = Root->GetParentActor();
-			}
-
-			if (!Parent || Parent == Root)
-			{
-				break;
-			}
-
-			Root = Parent;
+			Parent = Root->GetParentActor();
 		}
-		return Root;
+
+		if (!Parent || Parent == Root)
+		{
+			break;
+		}
+
+		Root = Parent;
 	}
+	return Root;
 }
 
 // -------------------------------------------------------------------
@@ -154,31 +152,55 @@ bool FKawaiiPhysicsSharedCollisionEntry::IsEmpty() const
 // UKawaiiPhysicsSharedCollisionSubsystem
 // -------------------------------------------------------------------
 
+bool UKawaiiPhysicsSharedCollisionSubsystem::TryResolveRegistryKey(
+	AActor* Actor, const FGameplayTag& Tag, FRegistryKey& OutKey)
+{
+	if (!Actor || !Tag.IsValid())
+	{
+		return false;
+	}
+
+	// アタッチ階層を毎回辿り直すことで、ランタイムのアタッチ変更にも追従する（read-only）
+	AActor* FamilyRoot = GetFamilyRoot(Actor);
+	if (!FamilyRoot)
+	{
+		return false;
+	}
+
+	OutKey = FRegistryKey(FamilyRoot, Tag);
+	return true;
+}
+
+TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubsystem::FindEntryByKey(
+	const FRegistryKey& Key) const
+{
+	FReadScopeLock ReadLock(RegistryLock);
+	if (const TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>* Found = Registry.Find(Key))
+	{
+		// Actorが無効ならスキップ（Tick()で定期的にクリーンアップ）
+		if (Key.Key.IsValid())
+		{
+			return *Found;
+		}
+	}
+	return nullptr;
+}
+
 TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubsystem::FindOrCreateEntry(
 	AActor* Actor, const FGameplayTag& Tag)
 {
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_FindOrCreateEntry);
-	
-	if (!Actor || !Tag.IsValid())
+
+	FRegistryKey Key;
+	if (!TryResolveRegistryKey(Actor, Tag, Key))
 	{
 		return nullptr;
 	}
 
-	AActor* FamilyRoot = GetSharedCollisionFamilyRoot(Actor);
-	if (!FamilyRoot)
+	// 既存Entryの検索（読み取りロック）
+	if (TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> Existing = FindEntryByKey(Key))
 	{
-		return nullptr;
-	}
-
-	const TPair<TWeakObjectPtr<AActor>, FGameplayTag> Key(FamilyRoot, Tag);
-
-	// 既存Entryの検索は読み取りロック
-	{
-		FReadScopeLock ReadLock(RegistryLock);
-		if (TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>* Existing = Registry.Find(Key))
-		{
-			return *Existing;
-		}
+		return Existing;
 	}
 
 	// 構造変更は書き込みロック。ロック取得待ちの間に他スレッドが作成済みの可能性があるため再確認
@@ -197,30 +219,12 @@ TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> UKawaiiPhysicsSharedCollisionSubs
 {
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_FindEntry);
 
-	if (!Actor || !Tag.IsValid())
+	FRegistryKey Key;
+	if (!TryResolveRegistryKey(Actor, Tag, Key))
 	{
 		return nullptr;
 	}
-
-	AActor* FamilyRoot = GetSharedCollisionFamilyRoot(Actor);
-	if (!FamilyRoot)
-	{
-		return nullptr;
-	}
-
-	const TPair<TWeakObjectPtr<AActor>, FGameplayTag> Key(FamilyRoot, Tag);
-
-	FReadScopeLock ReadLock(RegistryLock);
-	if (const TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>* Found = Registry.Find(Key))
-	{
-		// Actorが無効ならスキップ（Tick()で定期的にクリーンアップ）
-		if (Key.Key.IsValid())
-		{
-			return *Found;
-		}
-	}
-
-	return nullptr;
+	return FindEntryByKey(Key);
 }
 
 void UKawaiiPhysicsSharedCollisionSubsystem::Deinitialize()

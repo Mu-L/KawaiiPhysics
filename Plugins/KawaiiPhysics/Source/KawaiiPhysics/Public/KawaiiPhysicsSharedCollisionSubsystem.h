@@ -96,14 +96,22 @@ class KAWAIIPHYSICS_API UKawaiiPhysicsSharedCollisionSubsystem : public UTickabl
 
 public:
 	/**
-	 * Source用: Actorファミリーrootのエントリを検索、なければ作成（RegistryLockでスレッドセーフ。任意スレッドから呼べる）
-	 * For sources: Find or create an entry for the actor family root (thread-safe via RegistryLock; callable from any thread)
+	 * Actorのアタッチ階層を遡ってファミリーrootを求める。アタッチポインタを辿るだけのread-only処理で、
+	 * UObjectの変更やGCに触れないため任意スレッドから呼べる（並列eval中はアタッチが不変である前提）。
+	 * Resolve the actor-family root by walking the attach hierarchy. Read-only pointer chase (no UObject mutation/GC),
+	 * callable from any thread (assumes attachment is stable during parallel evaluation).
+	 */
+	static AActor* GetFamilyRoot(AActor* Actor);
+
+	/**
+	 * Source用: Actorのファミリーrootのエントリを検索、なければ作成（RegistryLockでスレッドセーフ。任意スレッドから呼べる）
+	 * For sources: Find or create an entry for the actor family root. Thread-safe via RegistryLock; callable from any thread.
 	 */
 	TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> FindOrCreateEntry(AActor* Actor, const FGameplayTag& Tag);
 
 	/**
-	 * Target用: Actorファミリーrootのエントリを検索（RegistryLockでスレッドセーフ。任意スレッドから呼べる）
-	 * For targets: Find an entry for the actor family root (thread-safe via RegistryLock; callable from any thread)
+	 * Target用: Actorのファミリーrootのエントリを検索（RegistryLockでスレッドセーフ。任意スレッドから呼べる）
+	 * For targets: Find an entry for the actor family root. Thread-safe via RegistryLock; callable from any thread.
 	 */
 	TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> FindEntry(AActor* Actor, const FGameplayTag& Tag) const;
 
@@ -118,8 +126,24 @@ public:
 	virtual bool IsTickableInEditor() const override { return true; }
 
 private:
+	/** レジストリのキー型: (ActorFamilyRoot, Tag) / Registry key type */
+	using FRegistryKey = TPair<TWeakObjectPtr<AActor>, FGameplayTag>;
+
+	/**
+	 * Actor/Tagからレジストリキーを構築する（GetFamilyRootでファミリーroot解決込み）。
+	 * Actor/Tagが無効、またはファミリーrootが取れない場合は false。FindOrCreateEntry/FindEntryの共通前処理。
+	 * Build the registry key from Actor/Tag (resolving the family root). Returns false if invalid. Shared by FindOrCreateEntry/FindEntry.
+	 */
+	static bool TryResolveRegistryKey(AActor* Actor, const FGameplayTag& Tag, FRegistryKey& OutKey);
+
+	/**
+	 * 構築済みキーで Entry を読み取りロック検索する（死んだActorのEntryはスキップ）。
+	 * Read-locked lookup of an entry by its already-resolved key (skips entries whose family-root actor has died).
+	 */
+	TSharedPtr<FKawaiiPhysicsSharedCollisionEntry> FindEntryByKey(const FRegistryKey& Key) const;
+
 	/** レジストリ: (ActorFamilyRoot, Tag) → Entry / Registry: (ActorFamilyRoot, Tag) -> Entry */
-	TMap<TPair<TWeakObjectPtr<AActor>, FGameplayTag>, TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>> Registry;
+	TMap<FRegistryKey, TSharedPtr<FKawaiiPhysicsSharedCollisionEntry>> Registry;
 
 	/** Registryの構造変更とイテレーションの競合を防ぐロック（Worker初期化とGameThread Tickの両方が触る）
 	 *  Lock protecting Registry structural changes vs iteration (touched by both worker-thread init and GameThread Tick).

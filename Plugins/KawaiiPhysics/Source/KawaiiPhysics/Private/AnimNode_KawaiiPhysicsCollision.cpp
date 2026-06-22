@@ -943,7 +943,8 @@ void FAnimNode_KawaiiPhysics::InitializeSharedCollision()
 		return;
 	}
 
-	// Subsystem/owner ActorはGameThread(OnInitializeAnimInstance)で解決済みのキャッシュを使う
+	// Subsystemとowner ActorはGameThread(OnInitializeAnimInstance)で解決済みのキャッシュを使う。
+	// ファミリーrootはSubsystem側がownerから毎回辿り直す（ランタイムのアタッチ変更に追従）。
 	UKawaiiPhysicsSharedCollisionSubsystem* Subsystem = CachedSharedCollisionSubsystem.Get();
 	if (!Subsystem)
 	{

@@ -692,9 +692,9 @@ private:
 #endif
 
 	// --- Shared Collision ---
-	// Subsystem/owner ActorはGameThread(OnInitializeAnimInstance)で1回解決してキャッシュする。
-	// Evaluate(AnyThread)での GetWorld/GetSubsystem/GetOwner といったUObjectナビゲーションを避けるため。
-	// Resolved once on the GameThread (OnInitializeAnimInstance) to avoid GetWorld/GetSubsystem/GetOwner UObject navigation on AnyThread.
+	// Subsystemとowner ActorはGameThread(OnInitializeAnimInstance)で1回解決してキャッシュする（Evaluate(AnyThread)での
+	// GetWorld/GetSubsystem/GetOwnerナビゲーション回避）。ファミリーrootはアタッチ変更追従のためEvaluate側で都度解決する。
+	// Subsystem/owner cached once on the GameThread; the family root is re-resolved each attempt in Evaluate to follow runtime attachment changes.
 	TWeakObjectPtr<UKawaiiPhysicsSharedCollisionSubsystem> CachedSharedCollisionSubsystem;
 	TWeakObjectPtr<AActor> CachedSharedCollisionOwnerActor;
 
