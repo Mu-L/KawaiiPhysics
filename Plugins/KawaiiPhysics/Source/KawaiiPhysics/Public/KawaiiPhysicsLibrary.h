@@ -649,7 +649,7 @@ ValueType UKawaiiPhysicsLibrary::GetExternalForceProperty(EKawaiiPhysicsAccessEx
                                                           const FKawaiiPhysicsReference& KawaiiPhysics,
                                                           int ExternalForceIndex, FName PropertyName)
 {
-	ValueType Result;
+	ValueType Result{};
 	ExecResult = EKawaiiPhysicsAccessExternalForceResult::NotValid;
 
 	KawaiiPhysics.CallAnimNodeFunction<FAnimNode_KawaiiPhysics>(
@@ -715,7 +715,7 @@ ValueType UKawaiiPhysicsLibrary::GetExternalForceStructProperty(EKawaiiPhysicsAc
                                                                 const FKawaiiPhysicsReference& KawaiiPhysics,
                                                                 int ExternalForceIndex, FName PropertyName)
 {
-	ValueType Result;
+	ValueType Result{};
 	ExecResult = EKawaiiPhysicsAccessExternalForceResult::NotValid;
 
 	KawaiiPhysics.CallAnimNodeFunction<FAnimNode_KawaiiPhysics>(
