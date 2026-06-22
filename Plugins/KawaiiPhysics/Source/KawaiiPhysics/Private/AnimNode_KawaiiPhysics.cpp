@@ -18,6 +18,8 @@
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "Engine/World.h"
 #include "PhysicsEngine/PhysicsSettings.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Actor.h"
 
 #if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5
 #include "PhysicsEngine/SkeletalBodySetup.h"
@@ -36,6 +38,41 @@
 #include "AnimNode_KawaiiPhysicsInternal.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AnimNode_KawaiiPhysics)
+
+// 警告ログ用：ノードを特定するコンテキスト文字列の生成とログ出力マクロ。
+// AnyThreadからUObjectに触れないよう、名前はPreUpdate(GameThread)でキャッシュ済みのものを使う。
+// マクロはメンバを非修飾参照するためメンバ関数内でのみ使用可。ファイル末尾で#undefする。
+#if !UE_BUILD_SHIPPING
+static FString BuildKawaiiNodeContextString(
+	const FName AnimBPName, const FName ComponentName,
+	const FName ActorName, const FName RootBoneName)
+{
+	return FString::Printf(
+		TEXT("AnimBP: %s, Component: %s, Actor: %s, RootBone: %s"),
+		*AnimBPName.ToString(), *ComponentName.ToString(),
+		*ActorName.ToString(), *RootBoneName.ToString());
+}
+
+// ノード特定情報を末尾に付与してWarningを出す（移植性のためFormatの後に最低1つの可変引数が必要）
+#define KAWAII_LOG_NODE_WARNING(CategoryName, Format, ...) \
+	UE_LOG(CategoryName, Warning, Format TEXT(" (%s)"), __VA_ARGS__, \
+		*BuildKawaiiNodeContextString(CachedAnimInstanceClassName, CachedComponentName, \
+			CachedOwnerActorName, RootBone.BoneName))
+
+// ノードごと1回だけWarning（GuardBoolはShipping除外メンバ）
+#define KAWAII_LOG_NODE_WARNING_ONCE(GuardBool, CategoryName, Format, ...) \
+	do { if (!(GuardBool)) { KAWAII_LOG_NODE_WARNING(CategoryName, Format, __VA_ARGS__); (GuardBool) = true; } } while (0)
+
+// 1回ガードのリセット
+#define KAWAII_RESET_NODE_WARNING_ONCE(GuardBool) (GuardBool) = false
+#else
+// Shipping：コンテキストなしの素のログ。GuardBool引数は展開で破棄され、除外メンバを参照しない
+#define KAWAII_LOG_NODE_WARNING(CategoryName, Format, ...) \
+	UE_LOG(CategoryName, Warning, Format, __VA_ARGS__)
+#define KAWAII_LOG_NODE_WARNING_ONCE(GuardBool, CategoryName, Format, ...) \
+	UE_LOG(CategoryName, Warning, Format, __VA_ARGS__)
+#define KAWAII_RESET_NODE_WARNING_ONCE(GuardBool) ((void)0)
+#endif
 
 #if ENABLE_ANIM_DEBUG
 TAutoConsoleVariable<bool> CVarAnimNodeKawaiiPhysicsEnable(
@@ -234,7 +271,9 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		else
 		{
 			PrevBaseBoneSpace2ComponentSpace = FTransform::Identity;
-			UE_LOG(LogKawaiiPhysics, Warning, TEXT("SimulationBaseBone is invalid. Reverting to Identity transform."));
+			KAWAII_LOG_NODE_WARNING_ONCE(bSimBaseBoneInvalidWarned, LogKawaiiPhysics,
+				TEXT("SimulationBaseBone [%s] is invalid. Reverting to Identity transform."),
+				*SimulationBaseBone.BoneName.ToString());
 		}
 	}
 
@@ -274,6 +313,8 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		ModifyBones.Empty(ModifyBones.Num());
 		bInitPhysicsSettings = false;
 		bModifyBonesNeedsReinit = false;
+		// 再初期化（設定変更）時はSimulationBaseBone無効警告を再通知できるようガードを戻す
+		KAWAII_RESET_NODE_WARNING_ONCE(bSimBaseBoneInvalidWarned);
 	}
 
 #if WITH_EDITOR
@@ -346,13 +387,13 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 
 		if (InterBoneDummyWarningThreshold > 0 && InterBoneDummyCount > InterBoneDummyWarningThreshold)
 		{
-			UE_LOG(LogAnimation, Warning,
+			KAWAII_LOG_NODE_WARNING(LogAnimation,
 				TEXT("KawaiiPhysics: %d inter-bone dummy bones generated (warning threshold: %d). This may impact performance. Consider reducing BoneSubdivisionCount or raising InterBoneDummyWarningThreshold in Kawaii Physics project settings."),
 				InterBoneDummyCount, InterBoneDummyWarningThreshold);
 		}
 		if (BridgeDummyWarningThreshold > 0 && BridgeDummyCount > BridgeDummyWarningThreshold)
 		{
-			UE_LOG(LogAnimation, Warning,
+			KAWAII_LOG_NODE_WARNING(LogAnimation,
 				TEXT("KawaiiPhysics: %d bridge collision-proxy dummy bones and %d merged bone constraints generated (warning threshold: %d). This may impact performance. Consider reducing BoneConstraintSubdivisionCount or raising BridgeDummyWarningThreshold in Kawaii Physics project settings."),
 				BridgeDummyCount, MergedBoneConstraints.Num(), BridgeDummyWarningThreshold);
 		}
@@ -512,6 +553,20 @@ void FAnimNode_KawaiiPhysics::PreUpdate(const UAnimInstance* InAnimInstance)
 {
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_PreUpdate);
 
+#if !UE_BUILD_SHIPPING
+	// 警告ログ用のノード識別名を初回1回だけ収集（名前はノード生存中に不変なので毎フレーム取得しない）
+	if (CachedAnimInstanceClassName.IsNone() && InAnimInstance)
+	{
+		CachedAnimInstanceClassName = InAnimInstance->GetClass()->GetFName();
+		if (const USkeletalMeshComponent* SkelComp = InAnimInstance->GetSkelMeshComponent())
+		{
+			CachedComponentName = SkelComp->GetFName();
+			const AActor* OwnerActor = SkelComp->GetOwner();
+			CachedOwnerActorName = OwnerActor ? OwnerActor->GetFName() : NAME_None;
+		}
+	}
+#endif
+
 #if WITH_EDITOR
 	if (const UWorld* World = InAnimInstance->GetWorld())
 	{
@@ -552,7 +607,7 @@ void FAnimNode_KawaiiPhysics::PreUpdate(const UAnimInstance* InAnimInstance)
 				SharedCollisionInitRetryCount++;
 				if (SharedCollisionInitRetryCount > CVarSharedCollisionInitRetryThreshold.GetValueOnGameThread())
 				{
-					UE_LOG(LogKawaiiPhysics, Warning,
+					KAWAII_LOG_NODE_WARNING(LogKawaiiPhysics,
 						TEXT("SharedCollision: Target could not find source entry for tag [%s]. "
 							"Ensure a source node with matching tag exists in the same actor/child-actor family."),
 						*SharedCollisionGroupTag.ToString());
@@ -597,3 +652,7 @@ FVector FAnimNode_KawaiiPhysics::GetBoneForwardVector(const FQuat& Rotation) con
 		return -Rotation.GetAxisZ();
 	}
 }
+
+#undef KAWAII_LOG_NODE_WARNING
+#undef KAWAII_LOG_NODE_WARNING_ONCE
+#undef KAWAII_RESET_NODE_WARNING_ONCE

@@ -680,6 +680,17 @@ private:
 	 */
 	FTransform PrevBaseBoneSpace2ComponentSpace = FTransform::Identity;
 
+#if !UE_BUILD_SHIPPING
+	// --- 警告ログ用診断 / Diagnostics for warning logs ---
+	// 警告ログのノード特定用にGameThread(PreUpdate)で初回1回だけ収集する識別名（AnyThreadからのUObjectアクセス回避）
+	// Identifying names collected once on GameThread (PreUpdate) for warning logs (avoids UObject access on AnyThread)
+	FName CachedAnimInstanceClassName;
+	FName CachedComponentName;
+	FName CachedOwnerActorName;
+	// SimulationBaseBone無効警告をノードごと1回だけ出すためのガード / Guard to log the invalid SimulationBaseBone warning once per node
+	bool bSimBaseBoneInvalidWarned = false;
+#endif
+
 	// --- Shared Collision ---
 	// 共有コリジョン用キャッシュ（PreUpdateでGameThread初期化、以降はAnyThreadで参照）
 	// Cached shared collision pointers (initialized in PreUpdate on GameThread, then referenced on AnyThread)
