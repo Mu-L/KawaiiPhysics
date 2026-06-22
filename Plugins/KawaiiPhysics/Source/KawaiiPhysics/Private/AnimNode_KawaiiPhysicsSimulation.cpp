@@ -797,8 +797,8 @@ FVector FAnimNode_KawaiiPhysics::GetWindVelocity(FComponentSpacePoseContext& Out
 	float WindSpeed = 0.0f;
 	float WindMinGust = 0.0f;
 	float WindMaxGust = 0.0f;
-
-	Scene->GetWindParameters_GameThread(
+	
+	Scene->GetWindParameters(
 		ConvertSimulationSpaceLocation(Output, SimulationSpace, EKawaiiPhysicsSimulationSpace::WorldSpace,
 		                               Bone.PoseLocation),
 		WindDirection, WindSpeed, WindMinGust, WindMaxGust);
