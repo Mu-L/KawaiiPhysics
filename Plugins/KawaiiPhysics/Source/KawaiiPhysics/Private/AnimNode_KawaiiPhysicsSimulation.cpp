@@ -714,7 +714,7 @@ FVector FAnimNode_KawaiiPhysics::ComputeVerletStepVelocity(FKawaiiPhysicsModifyB
 	// Move using Velocity( = movement amount in pre frame ) and Damping
 	// 速度は前ステップ変位を DeltaTimeOld で割って再構成。固定サブステップ時 DeltaTimeOld=FixedDt。
 	// Velocity is reconstructed from the previous step's displacement / DeltaTimeOld (= FixedDt while substepping).
-	FVector Velocity = (Bone.Location - Bone.PrevLocation) / DeltaTimeOld;
+	FVector Velocity = (Bone.Location - Bone.PrevLocation) / FMath::Max(DeltaTimeOld, KINDA_SMALL_NUMBER);
 	Bone.PrevLocation = Bone.Location;
 
 	// 毎ステップ生の damping 係数（固定サブステップ化でフレームレート依存は解消済み）。
