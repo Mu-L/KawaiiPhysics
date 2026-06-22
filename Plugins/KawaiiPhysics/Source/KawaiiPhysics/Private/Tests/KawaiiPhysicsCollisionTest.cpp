@@ -152,6 +152,21 @@ bool FKawaiiPhysicsBoxTest::RunTest(const FString& Parameters)
 	                         *Buried.Location.ToString()),
 	         Buried.Location.Equals(FVector(8, 0, 0), GCollisionTol));
 
+	// 中心ちょうど一致の縮退ケース。修正前は半径方向が定まらず押し出されない（中心に留まる）バグ。
+	// 修正後は最小貫通軸（X==Y==Z のため +X）へ決定的に押し出され、closest点(=中心)+ (1,0,0)*3 = (3,0,0)。
+	// 注: (3,0,0) はまだ Box 内部だが、これは上の buried ケース(5→8)と同じ既存挙動（半径ぶんのみ押す）。
+	// 本修正の目的は完全脱出ではなく「中心に留まって全く動かない」ゼロ法線バグの解消。
+	// Center-coincident degenerate case. Before the fix the radial direction was undefined and the bone was not
+	// pushed at all (stuck at the center). After the fix it is pushed deterministically along the smallest-penetration
+	// axis (+X since X==Y==Z), landing at closestPoint(=center) + (1,0,0)*3 = (3,0,0).
+	// NOTE: (3,0,0) is still inside the box, matching the existing buried behavior (5->8 above): the fix targets the
+	// zero-normal stuck-at-center bug, not full de-penetration.
+	FKawaiiPhysicsModifyBone Center = MakeBone(FVector(0, 0, 0), 3.0f, FVector(0, 0, 0));
+	A.CallBoxCollision(Center, Limits);
+	TestTrue(FString::Printf(TEXT("Box center-coincident push-out: got %s expected (3,0,0)"),
+	                         *Center.Location.ToString()),
+	         Center.Location.Equals(FVector(3, 0, 0), GCollisionTol));
+
 	return true;
 }
 

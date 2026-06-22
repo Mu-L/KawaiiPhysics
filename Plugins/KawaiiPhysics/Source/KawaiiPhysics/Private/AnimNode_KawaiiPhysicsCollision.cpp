@@ -564,6 +564,25 @@ void FAnimNode_KawaiiPhysics::AdjustByBoxCollision(FKawaiiPhysicsModifyBone& Bon
 			{
 				PushOutVector = LocalSphereCenter;
 				Distance = SphereRadius;
+
+				// 中心一致時は半径方向が定まらず GetSafeNormal()==0 で動かなくなるため、最近面（最小貫通軸）を選ぶ。
+				// Center-coincident => zero normal => stuck; pick the nearest face (smallest-penetration axis).
+				if (PushOutVector.IsNearlyZero())
+				{
+					const FVector Penetration = Box.Extent - LocalSphereCenter.GetAbs();
+					if (Penetration.X <= Penetration.Y && Penetration.X <= Penetration.Z)
+					{
+						PushOutVector = FVector(LocalSphereCenter.X >= 0.0 ? 1.0 : -1.0, 0.0, 0.0);
+					}
+					else if (Penetration.Y <= Penetration.Z)
+					{
+						PushOutVector = FVector(0.0, LocalSphereCenter.Y >= 0.0 ? 1.0 : -1.0, 0.0);
+					}
+					else
+					{
+						PushOutVector = FVector(0.0, 0.0, LocalSphereCenter.Z >= 0.0 ? 1.0 : -1.0);
+					}
+				}
 			}
 
 			// push
