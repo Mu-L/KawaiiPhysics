@@ -691,8 +691,12 @@ void FAnimNode_KawaiiPhysics::AdjustByBoneConstraints()
 
 		// XBPD
 		float Constraint = DeltaLength - BoneConstraint.Length;
-		float Compliance = XPBDComplianceValues[static_cast<int32>(ComplianceType)];
-		const float StepDt = GetStepDeltaTime();
+		// enum 値の破損や将来の追加に備え、インデックスを配列範囲内へクランプ。
+		// Clamp the index into the array range to guard against enum corruption / future additions.
+		const int32 ComplianceIndex = FMath::Clamp(static_cast<int32>(ComplianceType), 0, XPBDComplianceValues.Num() - 1);
+		float Compliance = XPBDComplianceValues[ComplianceIndex];
+		// 極小 StepDt で compliance が発散しないようガード。/ Guard against a tiny StepDt blowing up compliance.
+		const float StepDt = FMath::Max(GetStepDeltaTime(), KINDA_SMALL_NUMBER);
 		Compliance /= StepDt * StepDt;
 		float DeltaLambda = (Constraint - Compliance * BoneConstraint.Lambda) / (2 + Compliance); // 2 = SumMass
 		Delta = (Delta / DeltaLength) * DeltaLambda;
