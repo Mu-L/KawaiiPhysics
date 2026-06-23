@@ -1353,12 +1353,12 @@ private:
 private:
 	// Evaluate中のみ有効なキャッシュ（SimulationSpace<->Component）
 	// AnyThread評価なので「フレーム跨ぎで使い回さない」こと
-	mutable FSimulationSpaceCache CurrentEvalSimSpaceCache;
-	mutable bool bHasCurrentEvalSimSpaceCache = false;
+	FSimulationSpaceCache CurrentEvalSimSpaceCache;
+	bool bHasCurrentEvalSimSpaceCache = false;
 
 	// Evaluate中のみ有効なWorldSpaceキャッシュ（World<->Component）
-	mutable FSimulationSpaceCache CurrentEvalWorldSpaceCache;
-	mutable bool bHasCurrentEvalWorldSpaceCache = false;
+	FSimulationSpaceCache CurrentEvalWorldSpaceCache;
+	bool bHasCurrentEvalWorldSpaceCache = false;
 };
 
 
