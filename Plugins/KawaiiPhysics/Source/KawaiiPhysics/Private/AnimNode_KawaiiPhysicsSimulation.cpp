@@ -656,7 +656,8 @@ FVector FAnimNode_KawaiiPhysics::ComputeVerletStepVelocity(FKawaiiPhysicsModifyB
 	FVector Velocity = (Bone.Location - Bone.PrevLocation) / FMath::Max(DeltaTimeOld, KINDA_SMALL_NUMBER);
 	Bone.PrevLocation = Bone.Location;
 
-	// 毎ステップ生の damping 係数（固定サブステップ化でフレームレート依存は解消済み）。
+	// 毎ステップ生の damping 係数。固定サブステップ経路ではStepDeltaTime一定によりフレームレート依存が解消される。
+	// legacy(非サブステップ)経路は後方互換目的で意図的に dt 非正規化のまま（フレームレート依存が残る）。
 	Velocity *= (1.0f - Bone.PhysicsSettings.Damping);
 
 	// wind（呼び出し元で計算済み）
@@ -740,15 +741,27 @@ FVector FAnimNode_KawaiiPhysics::GetWindVelocity(FComponentSpacePoseContext& Out
 
 	WindDirection =
 		ConvertSimulationSpaceVector(Output, EKawaiiPhysicsSimulationSpace::WorldSpace, SimulationSpace, WindDirection);
-	if (WindDirectionNoiseAngle > 0)
+
+	// 乱数(gust/cone)はフレーム頭で1回だけサンプルし、サブステップ間で同一値を使う（NumStepsに依存しない＝フレームレート非依存）
+	const uint64 CurrentFrame = GFrameCounter;
+	if (CachedWindNoiseFrame != CurrentFrame)
 	{
-		WindDirection = FMath::VRandCone(WindDirection, FMath::DegreesToRadians(WindDirectionNoiseAngle));
+		CachedWindNoiseFrame = CurrentFrame;
+		// gust: AnimDynamics由来の[0,2)倍率
+		CachedWindGustFactor = FMath::FRandRange(0.0f, 2.0f);
+		// cone: NoiseAngle内のランダム回転（任意軸×ランダム角）。風向きに適用してノイズを与える
+		CachedWindNoiseRotation = (WindDirectionNoiseAngle > 0)
+			                          ? FQuat(FMath::VRand(),
+			                                  FMath::FRandRange(0.0f, FMath::DegreesToRadians(WindDirectionNoiseAngle)))
+			                          : FQuat::Identity;
 	}
 
-	FVector WindVelocity = WindDirection * WindSpeed * WindScale;
+	if (WindDirectionNoiseAngle > 0)
+	{
+		WindDirection = CachedWindNoiseRotation.RotateVector(WindDirection);
+	}
 
-	// TODO:Migrate if there are more good method (Currently copying AnimDynamics implementation)
-	WindVelocity *= FMath::FRandRange(0.0f, 2.0f);
+	const FVector WindVelocity = WindDirection * WindSpeed * WindScale * CachedWindGustFactor;
 
 	return WindVelocity;
 }

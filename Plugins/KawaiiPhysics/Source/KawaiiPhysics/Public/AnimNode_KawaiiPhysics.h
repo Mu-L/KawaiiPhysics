@@ -718,6 +718,12 @@ private:
 	// Cached ReadMerged result (member variable to reuse capacity across frames)
 	FKawaiiPhysicsSharedCollisionData SharedCollisionMergedData;
 
+	// 風の乱数(gust/cone)をフレーム単位でキャッシュしサブステップ間で同一値を使う（NumStep非依存＝フレームレート非依存）
+	// Cache wind randomness (gust/cone) per frame, shared across substeps (frame-rate independent)
+	mutable uint64 CachedWindNoiseFrame = 0;
+	mutable FQuat CachedWindNoiseRotation = FQuat::Identity;
+	mutable float CachedWindGustFactor = 1.0f;
+
 	// --- World Collision ランタイムキャッシュ / World Collision runtime caches ---
 	// IgnoreBoneNamePrefix のFString版（ホットパスでのFName::ToString回避。AdjustByWorldCollisionで遅延再構築）
 	// FString versions of IgnoreBoneNamePrefix (avoids FName::ToString in the hot path; lazily rebuilt in AdjustByWorldCollision)

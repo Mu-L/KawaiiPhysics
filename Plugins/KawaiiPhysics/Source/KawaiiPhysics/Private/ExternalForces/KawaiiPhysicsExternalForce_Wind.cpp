@@ -47,10 +47,15 @@ void FKawaiiPhysics_ExternalForce_Wind::PreApply(FAnimNode_KawaiiPhysics& Node, 
 			                         EKawaiiPhysicsSimulationSpace::WorldSpace, Bone.PoseLocation),
 		                         WindDirection, WindSpeed, WindMinGust, WindMaxGust);
 
-		// SimulationSpace の風向きと風速を分けて保存（ノイズ・ForceRate・dt は Apply で毎ステップ適用）。
-		// 方向と速度を分離することで、元の VRandCone(dir)*speed をサブステップ毎に忠実に再現する。
-		CachedWindDirection[BoneIndex] = Node.ConvertSimulationSpaceVector(PoseContext,
+		// SimulationSpace の風向きと風速を分けて保存。ForceRate・dt は Apply で毎ステップ適用。
+		// 方向ノイズ(VRandCone)はフレーム頭で1回だけここで適用し、サブステップ間で同一値を使う
+		// （ノイズ分散が NumStep＝フレームレートに依存しないようにする。
+		const FVector SimSpaceDir = Node.ConvertSimulationSpaceVector(PoseContext,
 			EKawaiiPhysicsSimulationSpace::WorldSpace, Node.SimulationSpace, WindDirection);
+		CachedWindDirection[BoneIndex] = (WindDirectionNoiseAngle > 0)
+			                                 ? FMath::VRandCone(
+				                                 SimSpaceDir, FMath::DegreesToRadians(WindDirectionNoiseAngle))
+			                                 : SimSpaceDir;
 		CachedWindSpeed[BoneIndex] = WindSpeed;
 	}
 }
@@ -78,11 +83,9 @@ void FKawaiiPhysics_ExternalForce_Wind::Apply(FKawaiiPhysicsModifyBone& Bone, FA
 		ForceRate = Curve->Eval(Bone.LengthRateFromRoot);
 	}
 
-	// 方向ノイズはサブステップ毎に適用し、その後に風速を乗算（元コードの VRandCone(dir)*speed と同一）。
-	// Scene 問い合わせは PreApply で済ませてある。
-	FVector WindDirection = FMath::VRandCone(CachedWindDirection[Bone.Index],
-	                                         FMath::DegreesToRadians(WindDirectionNoiseAngle));
-	WindDirection *= WindSpeed;
+	// 方向ノイズは PreApply でフレーム単位に適用済み。ここでは風速のみ乗算する。
+	// Scene 問い合わせ・乱数をサブステップに依存させない（フレームレート非依存）。
+	const FVector WindDirection = CachedWindDirection[Bone.Index] * WindSpeed;
 	Bone.Location += WindDirection * ForceRate * RandomizedForceScale * Node.GetStepDeltaTime();
 
 #if ENABLE_ANIM_DEBUG
