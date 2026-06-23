@@ -341,6 +341,11 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		ModifyBones.Empty(ModifyBones.Num());
 		bInitPhysicsSettings = false;
 		bModifyBonesNeedsReinit = false;
+
+		// 再構築で新規ボーンのPrevPoseLocationが0に戻りsubstep補間が原点へ引かれチラつくため、
+		// flagを戻し次フレーム冒頭で現在ポーズから再開させる
+		bSubstepPoseInitialized = false;
+
 		// 再初期化（設定変更）時はSimulationBaseBone無効警告を再通知できるようガードを戻す
 		KAWAII_RESET_NODE_WARNING_ONCE(bSimBaseBoneInvalidWarned);
 	}
