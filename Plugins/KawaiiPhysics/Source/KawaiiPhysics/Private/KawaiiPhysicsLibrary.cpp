@@ -384,7 +384,7 @@ DEFINE_FUNCTION(UKawaiiPhysicsLibrary::execGetExternalForceWildcardProperty)
 	const FProperty* ResultProperty = nullptr;
 	KawaiiPhysics.CallAnimNodeFunction<FAnimNode_KawaiiPhysics>(
 		TEXT("GetExternalForceWildcardProperty"),
-		[&Result, &ResultProperty, &ExecResult, &ExternalForceIndex, &PropertyName](FAnimNode_KawaiiPhysics& InKawaiiPhysics)
+		[&Result, &ResultProperty, &ExternalForceIndex, &PropertyName](FAnimNode_KawaiiPhysics& InKawaiiPhysics)
 		{
 			if (InKawaiiPhysics.ExternalForces.IsValidIndex(ExternalForceIndex) &&
 				InKawaiiPhysics.ExternalForces[ExternalForceIndex].IsValid())
@@ -398,7 +398,6 @@ DEFINE_FUNCTION(UKawaiiPhysicsLibrary::execGetExternalForceWildcardProperty)
 					{
 						Result = Property->ContainerPtrToValuePtr<void>(Force);
 						ResultProperty = Property;
-						ExecResult = EKawaiiPhysicsAccessExternalForceResult::Valid;
 					}
 				}
 			}
@@ -406,11 +405,13 @@ DEFINE_FUNCTION(UKawaiiPhysicsLibrary::execGetExternalForceWildcardProperty)
 
 	P_FINISH;
 
-	// 出力ピン型と外力側プロパティ型が一致する時のみコピー（型不一致のメモリ破壊を防ぐ）
+	// 出力ピン型と外力側プロパティ型が一致する時のみコピーし、成功扱いにする
+	// （型不一致のメモリ破壊を防ぎ、かつ未コピーのまま成功報告しないようsetterと挙動を揃える）
 	if (ValueProp && ValuePtr && Result && ResultProperty && ValueProp->SameType(ResultProperty))
 	{
 		P_NATIVE_BEGIN;
 			ValueProp->CopyCompleteValue(ValuePtr, Result);
 		P_NATIVE_END;
+		ExecResult = EKawaiiPhysicsAccessExternalForceResult::Valid;
 	}
 }
