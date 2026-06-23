@@ -22,11 +22,12 @@ struct KAWAIIPHYSICS_API FKawaiiPhysicsSharedCollisionSourceSlot
 {
 	/**
 	 * ワーカースレッドから呼び出し可能 / Can be called from any thread.
-	 * 値渡し＋内部 MoveTemp で、書き込みロック区間内のディープコピーを避ける
-	 * Pass by value and MoveTemp internally to avoid a deep copy inside the write-lock critical section
-	 * (callers should MoveTemp; rvalue arguments bind without an extra copy).
+	 * InOutDataとBufferをSwapする。呼び出し側は受け取った旧Buffer(=InOutData)を次フレームの一時バッファとして再利用でき、
+	 * 書き込みロック区間内のディープコピーと毎フレームのメモリ確保を避けられる。
+	 * Swaps InOutData with Buffer. The caller can reuse the returned old buffer as next frame's scratch,
+	 * avoiding a deep copy inside the write-lock critical section and per-frame allocation.
 	 */
-	void Publish(FKawaiiPhysicsSharedCollisionData Data);
+	void Publish(FKawaiiPhysicsSharedCollisionData& InOutData);
 
 	/** ワーカースレッドから呼び出し可能 / Can be called from any thread */
 	void AppendTo(FKawaiiPhysicsSharedCollisionData& OutData) const;

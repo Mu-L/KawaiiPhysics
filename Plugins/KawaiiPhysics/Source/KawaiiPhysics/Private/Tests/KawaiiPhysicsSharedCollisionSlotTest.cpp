@@ -73,7 +73,9 @@ bool FKawaiiPhysicsSharedCollisionSourceSlotTest::RunTest(const FString& Paramet
 
 	{
 		FKawaiiPhysicsSharedCollisionSourceSlot Slot;
-		Slot.Publish(MakeFullData(10.0f));
+		// Publishは非const参照を取りBufferとSwapする（呼び出し側で旧Bufferを受け取る）ため、lvalueを渡す
+		FKawaiiPhysicsSharedCollisionData PublishData = MakeFullData(10.0f);
+		Slot.Publish(PublishData);
 
 		FKawaiiPhysicsSharedCollisionData OutData;
 		Slot.AppendTo(OutData);
@@ -98,8 +100,10 @@ bool FKawaiiPhysicsSharedCollisionSourceSlotTest::RunTest(const FString& Paramet
 
 	{
 		FKawaiiPhysicsSharedCollisionSourceSlot Slot;
-		Slot.Publish(MakeFullData(1.0f));
-		Slot.Publish(MakeSphericalData(50.0f, 2));
+		FKawaiiPhysicsSharedCollisionData FirstData = MakeFullData(1.0f);
+		Slot.Publish(FirstData);
+		FKawaiiPhysicsSharedCollisionData SecondData = MakeSphericalData(50.0f, 2);
+		Slot.Publish(SecondData);
 
 		FKawaiiPhysicsSharedCollisionData OutData;
 		Slot.AppendTo(OutData);
@@ -116,7 +120,8 @@ bool FKawaiiPhysicsSharedCollisionSourceSlotTest::RunTest(const FString& Paramet
 
 	{
 		FKawaiiPhysicsSharedCollisionSourceSlot Slot;
-		Slot.Publish(MakeSphericalData(100.0f));
+		FKawaiiPhysicsSharedCollisionData PublishData = MakeSphericalData(100.0f);
+		Slot.Publish(PublishData);
 
 		FKawaiiPhysicsSharedCollisionData OutData;
 		Slot.AppendTo(OutData);
@@ -130,7 +135,8 @@ bool FKawaiiPhysicsSharedCollisionSourceSlotTest::RunTest(const FString& Paramet
 
 	{
 		FKawaiiPhysicsSharedCollisionSourceSlot Slot;
-		Slot.Publish(MakeSphericalData(200.0f));
+		FKawaiiPhysicsSharedCollisionData PublishData = MakeSphericalData(200.0f);
+		Slot.Publish(PublishData);
 
 		const uint64 CurrentFrame = GFrameCounter;
 		TestTrue(TEXT("Recently published slot is not expired"),
@@ -143,10 +149,35 @@ bool FKawaiiPhysicsSharedCollisionSourceSlotTest::RunTest(const FString& Paramet
 
 	{
 		FKawaiiPhysicsSharedCollisionSourceSlot Slot;
-		Slot.Publish(MakeSphericalData(300.0f));
+		FKawaiiPhysicsSharedCollisionData PublishData = MakeSphericalData(300.0f);
+		Slot.Publish(PublishData);
 		Slot.MarkExpired();
 
 		TestTrue(TEXT("MarkExpired makes the slot expired"), Slot.IsExpired(GFrameCounter, 1));
+	}
+
+	// Publishのswap契約を検証: 入力とBufferをSwapするため、Publish後は入力側に旧Bufferが戻る。
+	// （内部copy実装に退行すると入力側が空/旧値にならず、ここで検出できる）
+	{
+		FKawaiiPhysicsSharedCollisionSourceSlot Slot;
+
+		FKawaiiPhysicsSharedCollisionData First = MakeSphericalData(400.0f); // 球1個（半径403）
+		Slot.Publish(First);
+		// 1回目: Bufferは初期状態（空）だったので、Publish後の入力側は空になる
+		TestTrue(TEXT("First publish swaps the empty old buffer back into input"), First.IsEmpty());
+
+		FKawaiiPhysicsSharedCollisionData Second = MakeSphericalData(500.0f, 3); // 球3個
+		Slot.Publish(Second);
+		// 2回目: 直前にpublishしたFirstのデータ（球1個・半径403）が入力側へ戻る
+		TestTrue(TEXT("Second publish returns the previously published buffer"),
+		         Second.SphericalLimits.Num() == 1);
+		TestTrue(TEXT("Returned buffer holds the first published sphere"),
+		         FMath::IsNearlyEqual(Second.SphericalLimits[0].Radius, 403.0f, GSharedCollisionSlotTol));
+
+		// 最新のpublish結果（球3個）がslotに残っていることも確認
+		FKawaiiPhysicsSharedCollisionData OutData;
+		Slot.AppendTo(OutData);
+		TestTrue(TEXT("Latest published data has three spheres"), OutData.SphericalLimits.Num() == 3);
 	}
 
 	return true;

@@ -991,7 +991,9 @@ void FAnimNode_KawaiiPhysics::WriteSharedCollisionToSubsystem(
 		return;
 	}
 
-	FKawaiiPhysicsSharedCollisionData Data;
+	// 使い回しの一時バッファを使う（Publishのswapで前フレームのBufferが戻り、確保済みメモリを再利用できる）
+	FKawaiiPhysicsSharedCollisionData& Data = SharedCollisionPublishScratch;
+	Data.Reset();
 
 	// ヘルパー: 有効なコリジョンを SimulationSpace→WorldSpace に変換して収集
 	auto ConvertAndAppend = [&](const auto& InLimits, auto& OutLimits, auto PostConvert)
@@ -1035,7 +1037,7 @@ void FAnimNode_KawaiiPhysics::WriteSharedCollisionToSubsystem(
 	ConvertAndAppend(PlanarLimits,        Data.PlanarLimits,     RecomputePlane);
 	ConvertAndAppend(PlanarLimitsData,    Data.PlanarLimits,     RecomputePlane);
 
-	CachedSourceSlot->Publish(MoveTemp(Data));
+	CachedSourceSlot->Publish(Data);
 }
 
 void FAnimNode_KawaiiPhysics::UpdateSharedCollisionLimits(

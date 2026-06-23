@@ -714,9 +714,13 @@ private:
 	TArray<FBoxLimit> SharedBoxLimits;
 	TArray<FPlanarLimit> SharedPlanarLimits;
 
-	// ReadMerged結果のキャッシュ（メンバ化によりフレーム間でcapacityを再利用）
+	// ReadMergedの結果を受け取るキャッシュ。メンバに持たせてフレーム間で確保済みメモリを使い回す
 	// Cached ReadMerged result (member variable to reuse capacity across frames)
 	FKawaiiPhysicsSharedCollisionData SharedCollisionMergedData;
+
+	// Publish時に使い回す一時バッファ。Slot側のBufferと中身を入れ替える(swap)ことで前フレームに確保したメモリが戻り、毎フレームのメモリ確保を避けられる
+	// Scratch for Publish (swap-based, reuses capacity across frames to avoid per-frame allocation on the source)
+	FKawaiiPhysicsSharedCollisionData SharedCollisionPublishScratch;
 
 	// 風の乱数(gust/cone)をフレーム単位でキャッシュしサブステップ間で同一値を使う（NumStep非依存＝フレームレート非依存）
 	// Cache wind randomness (gust/cone) per frame, shared across substeps (frame-rate independent)
@@ -729,11 +733,11 @@ private:
 	// FString versions of IgnoreBoneNamePrefix (avoids FName::ToString in the hot path; lazily rebuilt in AdjustByWorldCollision)
 	TArray<FString> IgnoreBoneNamePrefixStrings;
 	TArray<FName> IgnoreBoneNamePrefixCache;
-	// スイープ結果のスクラッチ（フレーム間でcapacityを再利用） / Sweep-result scratch (reuses capacity across frames)
+	// sweep結果を受け取る使い回しバッファ（フレーム間で確保済みメモリを再利用） / Sweep-result scratch (reuses capacity across frames)
 	TArray<FHitResult> WorldCollisionHitsScratch;
 
-	// bridge dummy feedback の集計スクラッチ（端点index→押し出し/重み）。SimulateOnce毎のTMap確保を避け、
-	// フレーム間でcapacityを再利用する。 / Bridge-dummy feedback accumulation scratch (endpoint index -> push/weight);
+	// bridge dummy feedback の集計用使い回しバッファ（端点index→押し出し/重み）。SimulateOnce毎のTMap確保を避け、
+	// フレーム間で確保済みメモリを再利用する。 / Bridge-dummy feedback accumulation scratch (endpoint index -> push/weight);
 	// avoids the per-SimulateOnce TMap allocation and reuses capacity across frames.
 	TArray<FVector> BridgeFeedbackPushScratch;
 	TArray<float> BridgeFeedbackWeightScratch;

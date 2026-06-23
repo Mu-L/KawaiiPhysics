@@ -45,12 +45,13 @@ AActor* UKawaiiPhysicsSharedCollisionSubsystem::GetFamilyRoot(AActor* Actor)
 // FKawaiiPhysicsSharedCollisionSourceSlot
 // -------------------------------------------------------------------
 
-void FKawaiiPhysicsSharedCollisionSourceSlot::Publish(FKawaiiPhysicsSharedCollisionData Data)
+void FKawaiiPhysicsSharedCollisionSourceSlot::Publish(FKawaiiPhysicsSharedCollisionData& InOutData)
 {
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_SharedCollision_Publish);
 
 	FWriteScopeLock WriteLock(BufferLock);
-	Buffer = MoveTemp(Data);
+	// Swapで旧BufferをInOutDataへ返し、呼び出し側が確保済みメモリを再利用できるようにする（ロック区間はSwapのみで最小）
+	Swap(Buffer, InOutData);
 
 	// フレーム番号を記録（鮮度チェック用）
 	LastPublishFrame.store(GFrameCounter, std::memory_order_release);
