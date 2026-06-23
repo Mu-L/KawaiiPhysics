@@ -40,6 +40,11 @@ void UAnimNotifyState_KawaiiPhysicsSetAlpha::NotifyTick(USkeletalMeshComponent* 
                                                         float FrameDeltaTime,
                                                         const FAnimNotifyEventReference& EventReference)
 {
+	if (!MeshComp)
+	{
+		return;
+	}
+
 	const float Alpha = ResolveAlpha(MeshComp, Animation);
 	UKawaiiPhysicsLibrary::SetAlphaToComponent(MeshComp, Alpha, FilterTags, bFilterExactMatch);
 
@@ -50,6 +55,11 @@ void UAnimNotifyState_KawaiiPhysicsSetAlpha::NotifyEnd(USkeletalMeshComponent* M
                                                        UAnimSequenceBase* Animation,
                                                        const FAnimNotifyEventReference& EventReference)
 {
+	if (!MeshComp)
+	{
+		return;
+	}
+
 	if (bHasSavedAlpha)
 	{
 		UKawaiiPhysicsLibrary::SetAlphaToComponent(MeshComp, SavedAlpha, FilterTags, bFilterExactMatch);
@@ -74,7 +84,10 @@ float UAnimNotifyState_KawaiiPhysicsSetAlpha::ResolveAlpha(USkeletalMeshComponen
 #if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
 				MeshComp->GetCurveValue(CurveName, DefaultAlphaIfNoCurve, Alpha);
 #else
-				MeshComp->GetAnimInstance()->GetCurveValueWithDefault(CurveName, DefaultAlphaIfNoCurve, Alpha);
+				if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())
+				{
+					AnimInst->GetCurveValueWithDefault(CurveName, DefaultAlphaIfNoCurve, Alpha);
+				}
 #endif
 			}
 			break;
