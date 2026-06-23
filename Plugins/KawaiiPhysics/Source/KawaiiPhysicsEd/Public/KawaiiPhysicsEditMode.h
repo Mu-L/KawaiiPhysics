@@ -11,6 +11,7 @@
 class FEditorViewportClient;
 class FPrimitiveDrawInterface;
 class USkeletalMeshComponent;
+class UKawaiiPhysicsLimitsDataAsset;
 struct FViewportClick;
 
 class FKawaiiPhysicsEditMode : public FAnimNodeEditMode
@@ -46,6 +47,8 @@ protected:
 	void OnLimitDataAssetPropertyChange(FPropertyChangedEvent& InPropertyEvent);
 	bool IsSelectAnimNodeCollision() const;
 	FDelegateHandle LimitsDataAssetPropertyDelegateHandle;
+	/** OnLimitsChangedをbind中のDataAsset（差し替え時に旧アセットからRemoveするため保持） */
+	TWeakObjectPtr<UKawaiiPhysicsLimitsDataAsset> BoundLimitsDataAsset;
 
 private:
 	void RenderModifyBones(FPrimitiveDrawInterface* PDI) const;

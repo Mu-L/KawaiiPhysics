@@ -80,6 +80,7 @@ void FKawaiiPhysicsEditMode::EnterMode(UAnimGraphNode_Base* InEditorNode, FAnimN
 		LimitsDataAssetPropertyDelegateHandle =
 			RuntimeNode->LimitsDataAsset->OnLimitsChanged.AddRaw(
 				this, &FKawaiiPhysicsEditMode::OnLimitDataAssetPropertyChange);
+		BoundLimitsDataAsset = RuntimeNode->LimitsDataAsset;
 	}
 
 	UMaterialInterface* BaseElemSelectedMaterial = LoadObject<UMaterialInterface>(
@@ -95,10 +96,13 @@ void FKawaiiPhysicsEditMode::EnterMode(UAnimGraphNode_Base* InEditorNode, FAnimN
 void FKawaiiPhysicsEditMode::ExitMode()
 {
 	GraphNode->OnNodePropertyChanged().Remove(NodePropertyDelegateHandle);
-	if (RuntimeNode->LimitsDataAsset)
+	// bind時のアセット基準で外す（実行中にLimitsDataAssetが差し替わっていても確実にRemoveできる）
+	if (UKawaiiPhysicsLimitsDataAsset* BoundAsset = BoundLimitsDataAsset.Get())
 	{
-		RuntimeNode->LimitsDataAsset->OnLimitsChanged.Remove(LimitsDataAssetPropertyDelegateHandle);
+		BoundAsset->OnLimitsChanged.Remove(LimitsDataAssetPropertyDelegateHandle);
 	}
+	BoundLimitsDataAsset = nullptr;
+	LimitsDataAssetPropertyDelegateHandle.Reset();
 
 	GraphNode = nullptr;
 	RuntimeNode = nullptr;
@@ -110,8 +114,14 @@ void FKawaiiPhysicsEditMode::Render(const FSceneView* View, FViewport* Viewport,
 {
 	const USkeletalMeshComponent* SkelMeshComp = GetAnimPreviewScene().GetPreviewMeshComponent();
 
+	if (!RuntimeNode || !GraphNode)
+	{
+		FAnimNodeEditMode::Render(View, Viewport, PDI);
+		return;
+	}
+
 	if (SkelMeshComp && SkelMeshComp->GetSkeletalMeshAsset() && SkelMeshComp->GetSkeletalMeshAsset()->GetSkeleton() &&
-		FAnimWeight::IsRelevant(RuntimeNode->GetAlpha() && RuntimeNode->IsRecentlyEvaluated()))
+		FAnimWeight::IsRelevant(RuntimeNode->GetAlpha()) && RuntimeNode->IsRecentlyEvaluated())
 	{
 		RenderModifyBones(PDI);
 		RenderLimitAngle(PDI);
@@ -569,15 +579,20 @@ void FKawaiiPhysicsEditMode::RenderExternalForces(FPrimitiveDrawInterface* PDI) 
 {
 	if (GraphNode->bEnableDebugDrawExternalForce)
 	{
-		for (const auto& Bone : RuntimeNode->ModifyBones)
+		for (auto& Force : RuntimeNode->ExternalForces)
 		{
-			for (auto& Force : RuntimeNode->ExternalForces)
+			if (!Force.IsValid())
 			{
-				if (Force.IsValid())
-				{
-					Force.GetMutablePtr<FKawaiiPhysics_ExternalForce>()->AnimDrawDebugForEditMode(
-						Bone, *RuntimeNode, PDI);
-				}
+				continue;
+			}
+			FKawaiiPhysics_ExternalForce* ForcePtr = Force.GetMutablePtr<FKawaiiPhysics_ExternalForce>();
+			if (!ForcePtr)
+			{
+				continue;
+			}
+			for (const auto& Bone : RuntimeNode->ModifyBones)
+			{
+				ForcePtr->AnimDrawDebugForEditMode(Bone, *RuntimeNode, PDI);
 			}
 		}
 	}
@@ -858,12 +873,22 @@ void FKawaiiPhysicsEditMode::OnExternalNodePropertyChange(FPropertyChangedEvent&
 		CurWidgetMode = UE_WIDGET::EWidgetMode::WM_None;
 	}
 
-	if (InPropertyEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(FAnimNode_KawaiiPhysics, LimitsDataAsset))
+	if (InPropertyEvent.Property &&
+		InPropertyEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(FAnimNode_KawaiiPhysics, LimitsDataAsset))
 	{
+		// LimitsDataAsset差し替え時は旧アセットのdelegateを外してから新アセットへbindし直す（多重bind/解放後通知を防ぐ）
+		if (UKawaiiPhysicsLimitsDataAsset* OldAsset = BoundLimitsDataAsset.Get())
+		{
+			OldAsset->OnLimitsChanged.Remove(LimitsDataAssetPropertyDelegateHandle);
+		}
+		LimitsDataAssetPropertyDelegateHandle.Reset();
+		BoundLimitsDataAsset = nullptr;
+
 		if (RuntimeNode->LimitsDataAsset)
 		{
-			RuntimeNode->LimitsDataAsset->OnLimitsChanged.AddRaw(
+			LimitsDataAssetPropertyDelegateHandle = RuntimeNode->LimitsDataAsset->OnLimitsChanged.AddRaw(
 				this, &FKawaiiPhysicsEditMode::OnLimitDataAssetPropertyChange);
+			BoundLimitsDataAsset = RuntimeNode->LimitsDataAsset;
 		}
 	}
 }
@@ -1031,7 +1056,8 @@ void FKawaiiPhysicsEditMode::DoTranslation(FVector& InTranslation)
 	CollisionRuntime->OffsetLocation += Offset;
 	CollisionGraph->OffsetLocation = CollisionRuntime->OffsetLocation;
 
-	if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
+	// DataAssetがランタイムでnull化されてもキャッシュ由来の選択は残るため、書き戻し前にnullガード
+	if (SelectCollisionSourceType == ECollisionSourceType::DataAsset && RuntimeNode->LimitsDataAsset)
 	{
 		RuntimeNode->LimitsDataAsset->UpdateLimit(CollisionRuntime);
 	}
@@ -1072,7 +1098,8 @@ void FKawaiiPhysicsEditMode::DoRotation(FRotator& InRotation)
 	CollisionRuntime->OffsetRotation = FRotator(DeltaQuat * CollisionRuntime->OffsetRotation.Quaternion());
 	CollisionGraph->OffsetRotation = CollisionRuntime->OffsetRotation;
 
-	if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
+	// DataAssetがランタイムでnull化されてもキャッシュ由来の選択は残るため、書き戻し前にnullガード
+	if (SelectCollisionSourceType == ECollisionSourceType::DataAsset && RuntimeNode->LimitsDataAsset)
 	{
 		RuntimeNode->LimitsDataAsset->UpdateLimit(CollisionRuntime);
 	}
@@ -1109,7 +1136,7 @@ void FKawaiiPhysicsEditMode::DoScale(FVector& InScale)
 
 		SphericalLimitGraph.Radius = SphericalLimitRuntime.Radius;
 
-		if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
+		if (SelectCollisionSourceType == ECollisionSourceType::DataAsset && RuntimeNode->LimitsDataAsset)
 		{
 			RuntimeNode->LimitsDataAsset->UpdateLimit(&SphericalLimitRuntime);
 		}
@@ -1129,7 +1156,7 @@ void FKawaiiPhysicsEditMode::DoScale(FVector& InScale)
 		CapsuleLimitGraph.Radius = CapsuleLimitRuntime.Radius;
 		CapsuleLimitGraph.Length = CapsuleLimitRuntime.Length;
 
-		if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
+		if (SelectCollisionSourceType == ECollisionSourceType::DataAsset && RuntimeNode->LimitsDataAsset)
 		{
 			RuntimeNode->LimitsDataAsset->UpdateLimit(&CapsuleLimitRuntime);
 		}
@@ -1146,7 +1173,7 @@ void FKawaiiPhysicsEditMode::DoScale(FVector& InScale)
 
 		BoxLimitGraph.Extent = BoxLimitRuntime.Extent;
 
-		if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
+		if (SelectCollisionSourceType == ECollisionSourceType::DataAsset && RuntimeNode->LimitsDataAsset)
 		{
 			RuntimeNode->LimitsDataAsset->UpdateLimit(&BoxLimitRuntime);
 		}
@@ -1167,6 +1194,12 @@ bool FKawaiiPhysicsEditMode::ShouldDrawWidget() const
 void FKawaiiPhysicsEditMode::DrawHUD(FEditorViewportClient* ViewportClient, FViewport* Viewport, const FSceneView* View,
                                      FCanvas* Canvas)
 {
+	if (!RuntimeNode || !GraphNode)
+	{
+		FAnimNodeEditMode::DrawHUD(ViewportClient, Viewport, View, Canvas);
+		return;
+	}
+
 	float FontWidth, FontHeight;
 	GEngine->GetSmallFont()->GetCharSize(TEXT('L'), FontWidth, FontHeight);
 	constexpr float XOffset = 5.0f;
