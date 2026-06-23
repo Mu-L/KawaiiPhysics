@@ -80,7 +80,7 @@ void FKawaiiPhysics_ExternalForce_Curve::PreApply(FAnimNode_KawaiiPhysics& Node,
 			break;
 
 		case EExternalForceCurveEvaluateType::Max:
-			Force = FVector(FLT_MIN);
+			Force = FVector(TNumericLimits<float>::Lowest());
 			for (const auto& CurveValue : CurveValues)
 			{
 				Force = FVector::Max(Force, CurveValue);
