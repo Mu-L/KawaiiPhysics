@@ -1082,10 +1082,15 @@ protected:
 	                        const FBoneContainer& BoneContainer, const FTransform& ComponentTransform) const;
 
 	/**
-	 * 共有コリジョンのEntry/Slotを初期化する。Evaluate(AnyThread)から呼ばれる。
-	 * GameThreadでキャッシュ済みのSubsystem/owner Actorを使い、Subsystem側のロックで保護されるためWorkerから安全。
+	 * 共有コリジョンのEntry/Slotを初期化する。Evaluate(Worker)から呼ばれる。
+	 * GameThreadでキャッシュ済みのSubsystem/owner Actorを使い、Registry/SlotはSubsystem内のFRWLockで保護されるためWorkerから安全。
+	 * 制限: TWeakObjectPtr::Get / AActor::GetAttachParentActor を read-only で触るため、並列eval中はアタッチ階層が不変かつ
+	 * GCが走らない前提に依存する（eval中のアタッチ変更や、ウィンドソース/コリジョンの動的増減は非対応）。
 	 * Initialize shared collision entry and source slot, using the GameThread-cached subsystem/owner actor.
-	 * Called from Evaluate on the worker thread; the subsystem is lock-protected so this is thread-safe.
+	 * Called from Evaluate on the worker thread; the registry/slot is lock-protected so this is thread-safe.
+	 * Limitation: it reads TWeakObjectPtr::Get / AActor::GetAttachParentActor and assumes the attach hierarchy is
+	 * immutable and GC does not run during parallel eval (re-attaching, or adding/removing wind sources/colliders
+	 * mid-eval, is not supported).
 	 */
 	void InitializeSharedCollision();
 
@@ -1186,6 +1191,12 @@ protected:
 
 	/**
 	 * Adjusts the bone position based on world collision.
+	 *
+	 * スレッド安全性・制限: Worker(Evaluate)スレッドから同期sweep(SweepSingle/MultiByChannel)を呼ぶ。
+	 * 並列eval中はphysics sceneがread-safeである前提に依存し、コリジョン構成の動的変更中は非対応。
+	 * Thread-safety / limitation: called from the worker (Evaluate) thread and issues synchronous sweeps
+	 * (SweepSingle/MultiByChannel). It assumes the physics scene is read-safe during parallel eval, and
+	 * does not support the collision setup being changed dynamically mid-eval.
 	 *
 	 * @param Bone The bone to adjust.
 	 * @param OwningComp The owning skeletal mesh component.
