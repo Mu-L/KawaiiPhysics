@@ -1311,6 +1311,14 @@ private:
 	float LastInitializedRadius = 0.0f;
 	float LastInitializedDummyBoneLength = 0.0f;
 
+	/**
+	 * 明示的なreinit要求、または前回init以降の設定変更（subdivision数/DensifyByRadius/Radius/DummyBoneLength）で
+	 * ModifyBonesの再構築が必要かを判定する。EvaluateSkeletalControl_AnyThreadの長い条件式を関数化したもの。
+	 * Returns true when ModifyBones must be rebuilt due to an explicit reinit request or tracked setting changes
+	 * (subdivision counts / DensifyByRadius / Radius / DummyBoneLength) since the last init.
+	 */
+	bool ShouldReinitModifyBones() const;
+
 	// SimulationSpace conversion cache (per-evaluation)
 	struct FSimulationSpaceCache
 	{

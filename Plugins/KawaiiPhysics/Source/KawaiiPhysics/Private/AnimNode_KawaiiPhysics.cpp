@@ -254,6 +254,37 @@ void FAnimNode_KawaiiPhysics::GatherDebugData(FNodeDebugData& DebugData)
 	Super::GatherDebugData(DebugData);
 }
 
+bool FAnimNode_KawaiiPhysics::ShouldReinitModifyBones() const
+{
+	// 明示的なreinit要求
+	if (bModifyBonesNeedsReinit)
+	{
+		return true;
+	}
+
+	// 配置トポロジ（生成されるダミー数）を左右する設定の変更
+	if (LastInitializedBoneSubdivisionCount != BoneSubdivisionCount ||
+		LastInitializedBoneConstraintSubdivisionCount != BoneConstraintSubdivisionCount ||
+		LastInitializedBoneSubdivisionDensifyByRadius != bBoneSubdivisionDensifyByRadius)
+	{
+		return true;
+	}
+
+	// Densify=true時のみ、node Radius変更でダミー数が変わる
+	if (bBoneSubdivisionDensifyByRadius && !FMath::IsNearlyEqual(LastInitializedRadius, PhysicsSettings.Radius))
+	{
+		return true;
+	}
+
+	// DummyBoneLength変更
+	if (!FMath::IsNearlyEqual(LastInitializedDummyBoneLength, DummyBoneLength))
+	{
+		return true;
+	}
+
+	return false;
+}
+
 void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpacePoseContext& Output,
                                                                 TArray<FBoneTransform>& OutBoneTransforms)
 {
@@ -330,13 +361,7 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	}
 	LastSimulationSpace = SimulationSpace;
 
-	if (ModifyBones.Num() > 0 &&
-		(bModifyBonesNeedsReinit ||
-		 LastInitializedBoneSubdivisionCount != BoneSubdivisionCount ||
-		 LastInitializedBoneConstraintSubdivisionCount != BoneConstraintSubdivisionCount ||
-		 LastInitializedBoneSubdivisionDensifyByRadius != bBoneSubdivisionDensifyByRadius ||
-		 (bBoneSubdivisionDensifyByRadius && !FMath::IsNearlyEqual(LastInitializedRadius, PhysicsSettings.Radius)) ||
-		 !FMath::IsNearlyEqual(LastInitializedDummyBoneLength, DummyBoneLength)))
+	if (ModifyBones.Num() > 0 && ShouldReinitModifyBones())
 	{
 		ModifyBones.Empty(ModifyBones.Num());
 		bInitPhysicsSettings = false;
