@@ -10,6 +10,7 @@
 #include "KawaiiPhysics.h"
 #include "ExternalForces/KawaiiPhysicsExternalForce.h"
 #include "KawaiiPhysicsLimitsDataAsset.h"
+#include "ScopedTransaction.h"
 #include "SceneManagement.h"
 #include "Animation/DebugSkelMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -662,12 +663,19 @@ bool FKawaiiPhysicsEditMode::HandleClick(FEditorViewportClient* InViewportClient
 		SelectCollisionType = KawaiiPhysicsHitProxy->CollisionType;
 		SelectCollisionIndex = KawaiiPhysicsHitProxy->CollisionIndex;
 		SelectCollisionSourceType = KawaiiPhysicsHitProxy->SourceType;
+		// 選択確定時のGuidを保持する（削除はこのGuidで対象を引き、クリック後に配列が変化しても誤削除しない）
+		SelectedCollisionGuid = FGuid();
+		if (const FCollisionLimitBase* Selected = GetSelectCollisionLimitRuntime())
+		{
+			SelectedCollisionGuid = Selected->Guid;
+		}
 		bResult = true;
 	}
 	else
 	{
 		SelectCollisionType = ECollisionLimitType::None;
 		SelectCollisionIndex = -1;
+		SelectedCollisionGuid = FGuid();
 	}
 
 	return bResult;
@@ -694,59 +702,141 @@ bool FKawaiiPhysicsEditMode::InputKey(FEditorViewportClient* InViewportClient, F
 		else if (InKey == EKeys::Delete && SelectCollisionSourceType != ECollisionSourceType::PhysicsAsset &&
 			IsValidSelectCollision())
 		{
-			switch (SelectCollisionType)
-			{
-			case ECollisionLimitType::Spherical:
-				if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
-				{
-					RuntimeNode->LimitsDataAsset->SphericalLimits.RemoveAt(SelectCollisionIndex);
-					RuntimeNode->LimitsDataAsset->MarkPackageDirty();
-				}
-				else
-				{
-					RuntimeNode->SphericalLimits.RemoveAt(SelectCollisionIndex);
-					GraphNode->Node.SphericalLimits.RemoveAt(SelectCollisionIndex);
-				}
-				break;
-			case ECollisionLimitType::Capsule:
-				if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
-				{
-					RuntimeNode->LimitsDataAsset->CapsuleLimits.RemoveAt(SelectCollisionIndex);
-					RuntimeNode->LimitsDataAsset->MarkPackageDirty();
-				}
-				else
-				{
-					RuntimeNode->CapsuleLimits.RemoveAt(SelectCollisionIndex);
-					GraphNode->Node.CapsuleLimits.RemoveAt(SelectCollisionIndex);
-				}
-				break;
-			case ECollisionLimitType::Box:
-				if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
-				{
-					RuntimeNode->LimitsDataAsset->BoxLimits.RemoveAt(SelectCollisionIndex);
-					RuntimeNode->LimitsDataAsset->MarkPackageDirty();
-				}
-				else
-				{
-					RuntimeNode->BoxLimits.RemoveAt(SelectCollisionIndex);
-					GraphNode->Node.BoxLimits.RemoveAt(SelectCollisionIndex);
-				}
-				break;
+			const bool bFromDataAsset = (SelectCollisionSourceType == ECollisionSourceType::DataAsset);
+			UKawaiiPhysicsLimitsDataAsset* LimitsDataAsset = RuntimeNode->LimitsDataAsset;
 
-			case ECollisionLimitType::Planar:
-				if (SelectCollisionSourceType == ECollisionSourceType::DataAsset)
+			// DataAsset由来なのにアセットが無効なら何もしない（null deref回避）
+			if (!bFromDataAsset || LimitsDataAsset)
+			{
+				// Undo可能にするためTransactionで包み、編集対象にModify()を呼ぶ
+				const FScopedTransaction Transaction(
+					LOCTEXT("DeleteKawaiiCollision", "Delete KawaiiPhysics Collision"));
+				if (bFromDataAsset)
 				{
-					RuntimeNode->LimitsDataAsset->PlanarLimits.RemoveAt(SelectCollisionIndex);
-					RuntimeNode->LimitsDataAsset->MarkPackageDirty();
+					LimitsDataAsset->Modify();
 				}
 				else
 				{
-					RuntimeNode->PlanarLimits.RemoveAt(SelectCollisionIndex);
-					GraphNode->Node.PlanarLimits.RemoveAt(SelectCollisionIndex);
+					GraphNode->Modify();
 				}
-				break;
-			case ECollisionLimitType::None: break;
-			default: ;
+
+				// 削除対象の解決: PreferredIndex(クリック時index)がまだ選択Guidの行を指せばそれを採用し（重複Guidでも
+				// クリック行を正確に特定）、stale化していればGuidで引き直す。INDEX_NONE時はGuid一致のみ。
+				auto ResolveIndex = [&](auto& Array, int32 PreferredIndex, const FGuid& Guid) -> int32
+				{
+					if (Array.IsValidIndex(PreferredIndex) &&
+						(!Guid.IsValid() || Array[PreferredIndex].Guid == Guid))
+					{
+						return PreferredIndex;
+					}
+					if (Guid.IsValid())
+					{
+						return Array.IndexOfByPredicate(
+							[&Guid](const FCollisionLimitBase& Limit) { return Limit.Guid == Guid; });
+					}
+					return INDEX_NONE;
+				};
+
+				// DataAsset由来: SelectCollisionIndexはマージ済みキャッシュ(PhysicsAsset混在)上の位置。runtime/graphは
+				// その位置を起点に、アセット配列はマージindexを流用できないためGuidで対応エントリを引いて各1件削除する。
+				auto RemoveDataAssetLimit = [&](auto& RuntimeMerged, auto& AssetArray, auto& GraphMerged)
+				{
+					const int32 RuntimeIndex = ResolveIndex(RuntimeMerged, SelectCollisionIndex, SelectedCollisionGuid);
+					// 対象が見つからない/DataAsset由来でなければ何もしない（source不一致のstale選択を弾く）
+					if (RuntimeIndex == INDEX_NONE ||
+						RuntimeMerged[RuntimeIndex].SourceType != ECollisionSourceType::DataAsset)
+					{
+						return;
+					}
+					const FGuid TargetGuid = RuntimeMerged[RuntimeIndex].Guid;
+
+					const int32 AssetIndex = ResolveIndex(AssetArray, INDEX_NONE, TargetGuid);
+					if (AssetIndex != INDEX_NONE)
+					{
+						AssetArray.RemoveAt(AssetIndex);
+						LimitsDataAsset->MarkPackageDirty();
+					}
+					RuntimeMerged.RemoveAt(RuntimeIndex);
+					const int32 GraphIndex = ResolveIndex(GraphMerged, SelectCollisionIndex, TargetGuid);
+					if (GraphIndex != INDEX_NONE)
+					{
+						GraphMerged.RemoveAt(GraphIndex);
+					}
+				};
+
+				// AnimNode由来: SelectCollisionIndexはそのまま*Limits配列の位置。runtime/graphとも同じ解決で1件削除。
+				auto RemoveAnimNodeLimit = [&](auto& RuntimeArray, auto& GraphArray)
+				{
+					const int32 RuntimeIndex = ResolveIndex(RuntimeArray, SelectCollisionIndex, SelectedCollisionGuid);
+					if (RuntimeIndex == INDEX_NONE)
+					{
+						return;
+					}
+					const FGuid TargetGuid = RuntimeArray[RuntimeIndex].Guid;
+					RuntimeArray.RemoveAt(RuntimeIndex);
+					const int32 GraphIndex = ResolveIndex(GraphArray, SelectCollisionIndex, TargetGuid);
+					if (GraphIndex != INDEX_NONE)
+					{
+						GraphArray.RemoveAt(GraphIndex);
+					}
+				};
+
+				switch (SelectCollisionType)
+				{
+				case ECollisionLimitType::Spherical:
+					if (bFromDataAsset)
+					{
+						RemoveDataAssetLimit(RuntimeNode->SphericalLimitsData, LimitsDataAsset->SphericalLimits,
+						                     GraphNode->Node.SphericalLimitsData);
+					}
+					else
+					{
+						RemoveAnimNodeLimit(RuntimeNode->SphericalLimits, GraphNode->Node.SphericalLimits);
+					}
+					break;
+				case ECollisionLimitType::Capsule:
+					if (bFromDataAsset)
+					{
+						RemoveDataAssetLimit(RuntimeNode->CapsuleLimitsData, LimitsDataAsset->CapsuleLimits,
+						                     GraphNode->Node.CapsuleLimitsData);
+					}
+					else
+					{
+						RemoveAnimNodeLimit(RuntimeNode->CapsuleLimits, GraphNode->Node.CapsuleLimits);
+					}
+					break;
+				case ECollisionLimitType::Box:
+					if (bFromDataAsset)
+					{
+						RemoveDataAssetLimit(RuntimeNode->BoxLimitsData, LimitsDataAsset->BoxLimits,
+						                     GraphNode->Node.BoxLimitsData);
+					}
+					else
+					{
+						RemoveAnimNodeLimit(RuntimeNode->BoxLimits, GraphNode->Node.BoxLimits);
+					}
+					break;
+
+				case ECollisionLimitType::Planar:
+					if (bFromDataAsset)
+					{
+						RemoveDataAssetLimit(RuntimeNode->PlanarLimitsData, LimitsDataAsset->PlanarLimits,
+						                     GraphNode->Node.PlanarLimitsData);
+					}
+					else
+					{
+						RemoveAnimNodeLimit(RuntimeNode->PlanarLimits, GraphNode->Node.PlanarLimits);
+					}
+					break;
+				case ECollisionLimitType::None: break;
+				default: ;
+				}
+
+				// 削除後は選択indexが縮んだ配列の別要素を指すため無効化する
+				SelectCollisionIndex = -1;
+				SelectCollisionType = ECollisionLimitType::None;
+				SelectCollisionSourceType = ECollisionSourceType::AnimNode;
+				SelectedCollisionGuid = FGuid();
 			}
 		}
 	}

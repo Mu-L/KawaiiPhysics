@@ -84,12 +84,44 @@ FText UAnimGraphNode_KawaiiPhysics::GetNodeTitle(ENodeTitleType::Type TitleType)
 	return CachedNodeTitles[TitleType];
 }
 
+void UAnimGraphNode_KawaiiPhysics::EnsureUniqueCollisionGuids()
+{
+	// コリジョン配列のGuidを一意化する（複製/貼り付けでGuidごとコピーされ重複しうるため）。
+	TSet<FGuid> SeenGuids;
+	auto Dedup = [&SeenGuids](auto& Limits)
+	{
+		for (auto& Limit : Limits)
+		{
+			if (!Limit.Guid.IsValid() || SeenGuids.Contains(Limit.Guid))
+			{
+				Limit.Guid = FGuid::NewGuid();
+			}
+			SeenGuids.Add(Limit.Guid);
+		}
+	};
+	Dedup(Node.SphericalLimits);
+	Dedup(Node.CapsuleLimits);
+	Dedup(Node.BoxLimits);
+	Dedup(Node.PlanarLimits);
+}
+
 void UAnimGraphNode_KawaiiPhysics::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
+	// 複製/貼り付け等でGuidが重複しうるため一意化する（EditModeのGuid削除が誤削除しないように）
+	EnsureUniqueCollisionGuids();
+
 	Node.ModifyBones.Empty();
 	ReconstructNode();
+}
+
+void UAnimGraphNode_KawaiiPhysics::PostLoad()
+{
+	Super::PostLoad();
+
+	// 本修正以前に複製された古いデータが重複Guidを持つ場合に備え、ロード時にも一意化する
+	EnsureUniqueCollisionGuids();
 }
 
 FEditorModeID UAnimGraphNode_KawaiiPhysics::GetEditorMode() const

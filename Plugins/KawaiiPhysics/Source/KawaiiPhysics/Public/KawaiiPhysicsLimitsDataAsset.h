@@ -194,5 +194,8 @@ public:
 private:
 #if WITH_EDITOR
 	void Sync();
+
+	/** コリジョン配列のGuidを一意化する（複製/貼り付け/旧データの重複Guidを再発番） */
+	void EnsureUniqueCollisionGuids();
 #endif
 };

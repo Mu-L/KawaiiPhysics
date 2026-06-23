@@ -87,6 +87,8 @@ private:
 	ECollisionLimitType SelectCollisionType = ECollisionLimitType::None;
 	int32 SelectCollisionIndex = -1;
 	ECollisionSourceType SelectCollisionSourceType = ECollisionSourceType::AnimNode;
+	/** 選択確定時のコリジョンの安定識別子。削除はindexでなくこのGuidで対象を引き、stale indexによる誤削除を防ぐ */
+	FGuid SelectedCollisionGuid;
 
 	// storing current widget mode 
 	mutable UE_WIDGET::EWidgetMode CurWidgetMode;

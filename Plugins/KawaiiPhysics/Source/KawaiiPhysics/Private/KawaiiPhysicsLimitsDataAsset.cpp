@@ -152,7 +152,31 @@ void UKawaiiPhysicsLimitsDataAsset::PostEditChangeChainProperty(FPropertyChanged
 		UpdateLimits(PlanarLimits);
 	}
 
+	// 貼り付け(ValueSet)等でもGuidが重複しうるため一意化する（EditModeのGuid削除が誤削除しないように）
+	EnsureUniqueCollisionGuids();
+
 	OnLimitsChanged.Broadcast(PropertyChangedEvent);
+}
+
+void UKawaiiPhysicsLimitsDataAsset::EnsureUniqueCollisionGuids()
+{
+	// コリジョンのGuidを一意にする（EditModeの削除がGuidで対象を一意特定できるように）
+	TSet<FGuid> SeenGuids;
+	auto Dedup = [&SeenGuids](auto& Limits)
+	{
+		for (auto& Limit : Limits)
+		{
+			if (!Limit.Guid.IsValid() || SeenGuids.Contains(Limit.Guid))
+			{
+				Limit.Guid = FGuid::NewGuid();
+			}
+			SeenGuids.Add(Limit.Guid);
+		}
+	};
+	Dedup(SphericalLimits);
+	Dedup(CapsuleLimits);
+	Dedup(BoxLimits);
+	Dedup(PlanarLimits);
 }
 #endif
 
@@ -211,4 +235,9 @@ void UKawaiiPhysicsLimitsDataAsset::PostLoad()
 		UE_LOG(LogKawaiiPhysics, Log, TEXT("Update : Deprecate LimitData (%s)"), *this->GetName());
 #endif
 	}
+
+#if WITH_EDITOR
+	// 複製/貼り付けでのGuid再発番より前に保存された古いデータが重複Guidを持つ場合に備え、ロード時にも一意化する
+	EnsureUniqueCollisionGuids();
+#endif
 }
