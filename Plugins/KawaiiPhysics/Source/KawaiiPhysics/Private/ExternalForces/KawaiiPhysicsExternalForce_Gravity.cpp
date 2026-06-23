@@ -29,7 +29,7 @@ void FKawaiiPhysics_ExternalForce_Gravity::PreApply(FAnimNode_KawaiiPhysics& Nod
 	// Characterのカスタム重力方向に対応
 	if (OwnerCharacter)
 	{
-#if	ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3
+#if !UE_VERSION_OLDER_THAN(5, 3, 0)
 		if (bUseCharacterGravityDirection)
 		{
 			Force = OwnerCharacter->GetGravityDirection();

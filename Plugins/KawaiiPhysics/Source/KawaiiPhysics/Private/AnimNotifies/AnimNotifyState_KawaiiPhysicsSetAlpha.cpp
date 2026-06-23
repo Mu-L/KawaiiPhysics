@@ -81,7 +81,7 @@ float UAnimNotifyState_KawaiiPhysicsSetAlpha::ResolveAlpha(USkeletalMeshComponen
 			Alpha = DefaultAlphaIfNoCurve;
 			if (MeshComp && CurveName != NAME_None)
 			{
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+#if !UE_VERSION_OLDER_THAN(5, 6, 0)
 				MeshComp->GetCurveValue(CurveName, DefaultAlphaIfNoCurve, Alpha);
 #else
 				if (UAnimInstance* AnimInst = MeshComp->GetAnimInstance())

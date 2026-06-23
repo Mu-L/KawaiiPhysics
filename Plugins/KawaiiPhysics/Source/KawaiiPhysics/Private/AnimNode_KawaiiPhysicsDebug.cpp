@@ -16,11 +16,11 @@
 #include "Engine/World.h"
 #include "PhysicsEngine/PhysicsSettings.h"
 
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5
+#if !UE_VERSION_OLDER_THAN(5, 5, 0)
 #include "PhysicsEngine/SkeletalBodySetup.h"
 #endif
 
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 6
+#if !UE_VERSION_OLDER_THAN(5, 6, 0)
 #include "Animation/AnimInstance.h"
 #endif
 
@@ -116,7 +116,7 @@ void FAnimNode_KawaiiPhysics::AnimDrawDebug(FComponentSpacePoseContext& Output)
 					                                      FColor::Blue, false, -1, LineThickness, SDPG_Foreground);
 				}
 
-#if	ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+#if !UE_VERSION_OLDER_THAN(5, 6, 0)
 				// Capsule limit
 				for (const auto& CapsuleLimit : CapsuleLimits)
 				{
@@ -171,7 +171,7 @@ void FAnimNode_KawaiiPhysics::AnimDrawDebug(FComponentSpacePoseContext& Output)
 						                                      FColor::Green, false, -1, LineThickness, SDPG_Foreground);
 					}
 
-#if	ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6
+#if !UE_VERSION_OLDER_THAN(5, 6, 0)
 					for (const auto& CapsuleLimit : SharedCapsuleLimits)
 					{
 						FTransform CapsuleTransformWS =
