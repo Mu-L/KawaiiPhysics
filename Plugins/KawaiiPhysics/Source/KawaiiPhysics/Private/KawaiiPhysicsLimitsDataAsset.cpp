@@ -53,6 +53,11 @@ void UpdateCollisionLimit(TArray<CollisionLimitType>& CollisionLimitsData, const
 
 void UKawaiiPhysicsLimitsDataAsset::UpdateLimit(FCollisionLimitBase* Limit)
 {
+	if (!Limit)
+	{
+		return;
+	}
+
 	switch (Limit->Type)
 	{
 	case ECollisionLimitType::Spherical:

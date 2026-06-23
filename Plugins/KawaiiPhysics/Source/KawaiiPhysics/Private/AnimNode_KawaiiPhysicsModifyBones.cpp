@@ -80,10 +80,13 @@ void FAnimNode_KawaiiPhysics::InitModifyBones(FComponentSpacePoseContext& Output
 	SCOPE_CYCLE_COUNTER(STAT_KawaiiPhysics_InitModifyBones);
 
 	// https://github.com/pafuhana1213/KawaiiPhysics/issues/174
-	const FReferenceSkeleton& RefSkeleton = (CVarAnimNodeKawaiiPhysicsUseBoneContainerRefSkeletonWhenInit.
-		                                        GetValueOnAnyThread())
-		                                        ? BoneContainer.GetReferenceSkeleton()
-		                                        : BoneContainer.GetSkeletonAsset()->GetReferenceSkeleton();
+	// SkeletonAssetがnull（クック失敗/参照切れ）の場合はBoneContainerのRefSkeletonにフォールバックしてクラッシュを避ける
+	const USkeleton* SkeletonAsset =
+		CVarAnimNodeKawaiiPhysicsUseBoneContainerRefSkeletonWhenInit.GetValueOnAnyThread()
+			? nullptr
+			: BoneContainer.GetSkeletonAsset();
+	const FReferenceSkeleton& RefSkeleton =
+		SkeletonAsset ? SkeletonAsset->GetReferenceSkeleton() : BoneContainer.GetReferenceSkeleton();
 
 	auto InitRootBone = [&](const FName& RootBoneName, const TArray<FBoneReference>& InExcludeBones)
 	{
@@ -434,7 +437,9 @@ void FAnimNode_KawaiiPhysics::CalcBoneLength(FKawaiiPhysicsModifyBone& Bone,
 	{
 		if (!Bone.bDummy)
 		{
-			Bone.BoneLength = RefBonePose[Bone.BoneRef.BoneIndex].GetLocation().Size();
+			Bone.BoneLength = RefBonePose.IsValidIndex(Bone.BoneRef.BoneIndex)
+				                  ? RefBonePose[Bone.BoneRef.BoneIndex].GetLocation().Size()
+				                  : 0.0f;
 		}
 		else if (!Bone.bInterBoneDummy)
 		{

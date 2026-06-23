@@ -42,7 +42,7 @@ void FKawaiiPhysicsSyncTarget::Apply(TArray<FKawaiiPhysicsModifyBone>& ModifyBon
 	TranslationBySyncBone = ScaledTranslation;
 #endif
 
-	if (Bone.ParentIndex >= 0)
+	if (Bone.ParentIndex >= 0 && ModifyBones.IsValidIndex(Bone.ParentIndex))
 	{
 		const FKawaiiPhysicsModifyBone& ParentBone = ModifyBones[Bone.ParentIndex];
 		const FVector NewPoseLocation = Bone.PoseLocation + ScaledTranslation;
@@ -56,8 +56,15 @@ void FKawaiiPhysicsSyncTarget::Apply(TArray<FKawaiiPhysicsModifyBone>& ModifyBon
 			{
 				const FKawaiiPhysicsModifyBone& GrandParent = ModifyBones[GrandParentIndex];
 				const float TargetLength = Bone.BoneLength / OneMinusAlpha;
-				Bone.PoseLocation =
-					(NewPoseLocation - GrandParent.PoseLocation).GetSafeNormal() * TargetLength + GrandParent.PoseLocation;
+				FVector Dir = (NewPoseLocation - GrandParent.PoseLocation).GetSafeNormal();
+				if (Dir.IsNearlyZero())
+				{
+					// 新位置が祖父と一致して方向が消えた場合は既存方向にフォールバック（それも退化なら長さ拘束をスキップ）
+					Dir = (Bone.PoseLocation - GrandParent.PoseLocation).GetSafeNormal();
+				}
+				Bone.PoseLocation = Dir.IsNearlyZero()
+					                    ? NewPoseLocation
+					                    : Dir * TargetLength + GrandParent.PoseLocation;
 			}
 			else
 			{
@@ -68,8 +75,15 @@ void FKawaiiPhysicsSyncTarget::Apply(TArray<FKawaiiPhysicsModifyBone>& ModifyBon
 		else
 		{
 			// 親に対するボーン長を維持する
-			Bone.PoseLocation = (NewPoseLocation - ParentBone.PoseLocation).GetSafeNormal() * Bone.BoneLength +
-				ParentBone.PoseLocation;
+			FVector Dir = (NewPoseLocation - ParentBone.PoseLocation).GetSafeNormal();
+			if (Dir.IsNearlyZero())
+			{
+				// 新位置が親と一致して方向が消えた場合は既存方向にフォールバック（それも退化なら長さ拘束をスキップ）
+				Dir = (Bone.PoseLocation - ParentBone.PoseLocation).GetSafeNormal();
+			}
+			Bone.PoseLocation = Dir.IsNearlyZero()
+				                    ? NewPoseLocation
+				                    : Dir * Bone.BoneLength + ParentBone.PoseLocation;
 		}
 	}
 	else

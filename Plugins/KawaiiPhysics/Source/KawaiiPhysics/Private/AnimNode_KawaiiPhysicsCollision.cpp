@@ -325,6 +325,12 @@ void FAnimNode_KawaiiPhysics::AdjustByWorldCollision(FComponentSpacePoseContext&
 		return;
 	}
 
+	// 半径0のスフィアではsweepが無効化され押し戻しが効かないためスキップ
+	if (Bone.PhysicsSettings.Radius <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
 
 	/** トレースはゲームスレッド上で実行されないため、TraceTag はデバッグトレースを描画しない */
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(KawaiiCollision));
@@ -524,7 +530,13 @@ void FAnimNode_KawaiiPhysics::AdjustByCapsuleCollision(FKawaiiPhysicsModifyBone&
 		if (DistSquared < LimitDistance * LimitDistance)
 		{
 			FVector ClosestPoint = FMath::ClosestPointOnSegment(Bone.Location, StartPoint, EndPoint);
-			Bone.Location = ClosestPoint + (Bone.Location - ClosestPoint).GetSafeNormal() * LimitDistance;
+			FVector PushDir = (Bone.Location - ClosestPoint).GetSafeNormal();
+			if (PushDir.IsNearlyZero())
+			{
+				// ボーンがカプセル軸上に乗ると押し出し方向が消えるため軸直交方向を代替に使う
+				PushDir = Capsule.Rotation.GetAxisX();
+			}
+			Bone.Location = ClosestPoint + PushDir * LimitDistance;
 		}
 	}
 }
@@ -628,7 +640,13 @@ void FAnimNode_KawaiiPhysics::AdjustByAngleLimit(
 
 	if (AngleOverLimit > 0.0f)
 	{
-		BoneDir = BoneDir.RotateAngleAxis(-AngleOverLimit, Axis.GetSafeNormal());
+		FVector RotationAxis = Axis.GetSafeNormal();
+		if (RotationAxis.IsNearlyZero())
+		{
+			// PoseDirとBoneDirがほぼ反平行だと回転軸が消えるため、親の側方軸を代替に使う
+			RotationAxis = ParentBone.PoseRotation.GetAxisX();
+		}
+		BoneDir = BoneDir.RotateAngleAxis(-AngleOverLimit, RotationAxis);
 		Bone.Location = BoneDir * (Bone.Location - ParentBone.Location).Size() + ParentBone.Location;
 	}
 }

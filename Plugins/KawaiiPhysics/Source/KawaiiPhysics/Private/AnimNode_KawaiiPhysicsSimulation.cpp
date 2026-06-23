@@ -1065,13 +1065,17 @@ FAnimNode_KawaiiPhysics::FSimulationSpaceCache FAnimNode_KawaiiPhysics::BuildSim
 
 	case EKawaiiPhysicsSimulationSpace::BaseBoneSpace:
 
-		if (SimulationBaseBone.IsValidToEvaluate())
+		if (SimulationBaseBone.IsValidToEvaluate(Output.Pose.GetPose().GetBoneContainer()))
 		{
 			const FCompactPoseBoneIndex BaseBoneIndex =
 				SimulationBaseBone.GetCompactPoseIndex(Output.Pose.GetPose().GetBoneContainer());
-			Cache.TargetSpaceToComponent =
-				Output.Pose.GetComponentSpaceTransform(BaseBoneIndex); // Base -> Component
-			Cache.ComponentToTargetSpace = Cache.TargetSpaceToComponent.Inverse(); // Component -> Base
+			// LODでbase boneがcompact poseから外れるとindexが無効化するためガード（他箇所と同形、無効時はIdentityのまま）
+			if (BaseBoneIndex >= 0)
+			{
+				Cache.TargetSpaceToComponent =
+					Output.Pose.GetComponentSpaceTransform(BaseBoneIndex); // Base -> Component
+				Cache.ComponentToTargetSpace = Cache.TargetSpaceToComponent.Inverse(); // Component -> Base
+			}
 		}
 		break;
 	}
