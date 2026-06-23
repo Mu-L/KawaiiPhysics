@@ -676,7 +676,7 @@ void FAnimNode_KawaiiPhysics::AdjustByPlanarConstraint(FKawaiiPhysicsModifyBone&
 	}
 }
 
-const TArray<float> XPBDComplianceValues =
+static constexpr float XPBDComplianceValues[] =
 {
 	0.00000000004f, // 0.04 x 10^(-9) (M^2/N) Concrete
 	0.00000000016f, // 0.16 x 10^(-9) (M^2/N) Wood
@@ -722,7 +722,8 @@ void FAnimNode_KawaiiPhysics::AdjustByBoneConstraints()
 		// XBPD
 		float Constraint = DeltaLength - BoneConstraint.Length;
 		// enum 値の破損や将来の追加に備え、インデックスを配列範囲内へクランプ。
-		const int32 ComplianceIndex = FMath::Clamp(static_cast<int32>(ComplianceType), 0, XPBDComplianceValues.Num() - 1);
+		const int32 ComplianceIndex = FMath::Clamp(static_cast<int32>(ComplianceType), 0,
+		                                           static_cast<int32>(UE_ARRAY_COUNT(XPBDComplianceValues)) - 1);
 		float Compliance = XPBDComplianceValues[ComplianceIndex];
 		// 極小 StepDt で compliance が発散しないようガード。
 		const float StepDt = FMath::Max(GetStepDeltaTime(), KINDA_SMALL_NUMBER);
