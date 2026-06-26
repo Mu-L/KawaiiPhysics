@@ -21,7 +21,8 @@ public class KawaiiPhysicsEd : ModuleRules
 			"UnrealEd",
 			"AnimGraphRuntime",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"DeveloperSettings"
 		});
 
 		if(Target.Version.MajorVersion >= 5)
