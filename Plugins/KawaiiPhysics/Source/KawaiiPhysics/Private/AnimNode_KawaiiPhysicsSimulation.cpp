@@ -403,6 +403,8 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 		AdjustBySphereCollision(Bone, SphericalLimitsData);
 		AdjustByCapsuleCollision(Bone, CapsuleLimits);
 		AdjustByCapsuleCollision(Bone, CapsuleLimitsData);
+		AdjustByTaperedCapsuleCollision(Bone, TaperedCapsuleLimits);
+		AdjustByTaperedCapsuleCollision(Bone, TaperedCapsuleLimitsData);
 		AdjustByBoxCollision(Bone, BoxLimits);
 		AdjustByBoxCollision(Bone, BoxLimitsData);
 		AdjustByPlanerCollision(Bone, PlanarLimits);
@@ -413,6 +415,7 @@ void FAnimNode_KawaiiPhysics::SimulateOnce(FComponentSpacePoseContext& Output,
 		{
 			AdjustBySphereCollision(Bone, SharedSphericalLimits);
 			AdjustByCapsuleCollision(Bone, SharedCapsuleLimits);
+			AdjustByTaperedCapsuleCollision(Bone, SharedTaperedCapsuleLimits);
 			AdjustByBoxCollision(Bone, SharedBoxLimits);
 			AdjustByPlanerCollision(Bone, SharedPlanarLimits);
 		}

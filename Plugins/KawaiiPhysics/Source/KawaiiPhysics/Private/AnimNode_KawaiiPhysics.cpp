@@ -87,6 +87,7 @@ DEFINE_STAT(STAT_KawaiiPhysics_UpdatePlanerLimit);
 DEFINE_STAT(STAT_KawaiiPhysics_WarmUp);
 DEFINE_STAT(STAT_KawaiiPhysics_UpdatePhysicsSetting);
 DEFINE_STAT(STAT_KawaiiPhysics_UpdateCapsuleLimit);
+DEFINE_STAT(STAT_KawaiiPhysics_UpdateTaperedCapsuleLimit);
 DEFINE_STAT(STAT_KawaiiPhysics_UpdateBoxLimit);
 DEFINE_STAT(STAT_KawaiiPhysics_UpdateModifyBonesPoseTransform);
 DEFINE_STAT(STAT_KawaiiPhysics_ApplySimulateResult);
@@ -106,6 +107,7 @@ DEFINE_STAT(STAT_KawaiiPhysics_BridgeDummy);
 DEFINE_STAT(STAT_KawaiiPhysics_AdjustByLimitsAndLength);
 DEFINE_STAT(STAT_KawaiiPhysics_NumSphereColliders);
 DEFINE_STAT(STAT_KawaiiPhysics_NumCapsuleColliders);
+DEFINE_STAT(STAT_KawaiiPhysics_NumTaperedCapsuleColliders);
 DEFINE_STAT(STAT_KawaiiPhysics_NumBoxColliders);
 DEFINE_STAT(STAT_KawaiiPhysics_NumPlanarColliders);
 DEFINE_STAT(STAT_KawaiiPhysics_NumSharedColliders);
@@ -124,6 +126,7 @@ void FAnimNode_KawaiiPhysics::Initialize_AnyThread(const FAnimationInitializeCon
 
 	SphericalLimitsData.Empty();
 	CapsuleLimitsData.Empty();
+	TaperedCapsuleLimitsData.Empty();
 	BoxLimitsData.Empty();
 	PlanarLimitsData.Empty();
 
@@ -146,6 +149,7 @@ void FAnimNode_KawaiiPhysics::Initialize_AnyThread(const FAnimationInitializeCon
 	SharedCollisionMergedData.Reset();
 	SharedSphericalLimits.Reset();
 	SharedCapsuleLimits.Reset();
+	SharedTaperedCapsuleLimits.Reset();
 	SharedBoxLimits.Reset();
 	SharedPlanarLimits.Reset();
 
@@ -280,6 +284,7 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		SharedCollisionMergedData.Reset();
 		SharedSphericalLimits.Reset();
 		SharedCapsuleLimits.Reset();
+		SharedTaperedCapsuleLimits.Reset();
 		SharedBoxLimits.Reset();
 		SharedPlanarLimits.Reset();
 	}
@@ -447,6 +452,8 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	UpdateSphericalLimits(SphericalLimitsData, Output, BoneContainer, ComponentTransform);
 	UpdateCapsuleLimits(CapsuleLimits, Output, BoneContainer, ComponentTransform);
 	UpdateCapsuleLimits(CapsuleLimitsData, Output, BoneContainer, ComponentTransform);
+	UpdateTaperedCapsuleLimits(TaperedCapsuleLimits, Output, BoneContainer, ComponentTransform);
+	UpdateTaperedCapsuleLimits(TaperedCapsuleLimitsData, Output, BoneContainer, ComponentTransform);
 	UpdateBoxLimits(BoxLimits, Output, BoneContainer, ComponentTransform);
 	UpdateBoxLimits(BoxLimitsData, Output, BoneContainer, ComponentTransform);
 	UpdatePlanerLimits(PlanarLimits, Output, BoneContainer, ComponentTransform);
@@ -504,11 +511,13 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 	// 入力規模カウンタ & メモリの更新（毎フレーム。負荷=N×L等の相関とダミー膨張の可視化用）
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumSphereColliders, SphericalLimits.Num() + SphericalLimitsData.Num());
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumCapsuleColliders, CapsuleLimits.Num() + CapsuleLimitsData.Num());
+	SET_DWORD_STAT(STAT_KawaiiPhysics_NumTaperedCapsuleColliders,
+	               TaperedCapsuleLimits.Num() + TaperedCapsuleLimitsData.Num());
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumBoxColliders, BoxLimits.Num() + BoxLimitsData.Num());
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumPlanarColliders, PlanarLimits.Num() + PlanarLimitsData.Num());
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumSharedColliders,
-	               SharedSphericalLimits.Num() + SharedCapsuleLimits.Num() + SharedBoxLimits.Num() +
-	               SharedPlanarLimits.Num());
+	               SharedSphericalLimits.Num() + SharedCapsuleLimits.Num() + SharedTaperedCapsuleLimits.Num() +
+	               SharedBoxLimits.Num() + SharedPlanarLimits.Num());
 	SET_DWORD_STAT(STAT_KawaiiPhysics_NumMergedBoneConstraints, MergedBoneConstraints.Num());
 	SET_MEMORY_STAT(STAT_KawaiiPhysics_ModifyBonesMemory,
 	                ModifyBones.GetAllocatedSize() + MergedBoneConstraints.GetAllocatedSize());
