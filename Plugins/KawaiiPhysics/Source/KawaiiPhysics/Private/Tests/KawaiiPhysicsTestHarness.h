@@ -305,6 +305,10 @@ struct FKawaiiPhysicsTestAccessor
 	{
 		Node.AdjustByCapsuleCollision(Bone, Limits);
 	}
+	void CallTaperedCapsuleCollision(FKawaiiPhysicsModifyBone& Bone, TArray<FTaperedCapsuleLimit>& Limits)
+	{
+		Node.AdjustByTaperedCapsuleCollision(Bone, Limits);
+	}
 	void CallBoxCollision(FKawaiiPhysicsModifyBone& Bone, TArray<FBoxLimit>& Limits)
 	{
 		Node.AdjustByBoxCollision(Bone, Limits);
@@ -513,9 +517,15 @@ private:
 				continue;
 			}
 			Node.AdjustBySphereCollision(Bone, Node.SphericalLimits);
+			Node.AdjustBySphereCollision(Bone, Node.SphericalLimitsData);
 			Node.AdjustByCapsuleCollision(Bone, Node.CapsuleLimits);
+			Node.AdjustByCapsuleCollision(Bone, Node.CapsuleLimitsData);
+			Node.AdjustByTaperedCapsuleCollision(Bone, Node.TaperedCapsuleLimits);
+			Node.AdjustByTaperedCapsuleCollision(Bone, Node.TaperedCapsuleLimitsData);
 			Node.AdjustByBoxCollision(Bone, Node.BoxLimits);
+			Node.AdjustByBoxCollision(Bone, Node.BoxLimitsData);
 			Node.AdjustByPlanerCollision(Bone, Node.PlanarLimits);
+			Node.AdjustByPlanerCollision(Bone, Node.PlanarLimitsData);
 		}
 
 		// BoneConstraint after collision（SimulateOnce 516-522）
