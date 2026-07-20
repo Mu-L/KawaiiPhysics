@@ -2,7 +2,9 @@
 
 #include "AnimNode_KawaiiPhysics.h"
 
+#include "Animation/MirrorDataTable.h"
 #include "AnimationRuntime.h"
+#include "KawaiiPhysicsMirrorUtils.h"
 #include "KawaiiPhysicsBoneConstraintsDataAsset.h"
 #include "KawaiiPhysicsCustomExternalForce.h"
 #include "ExternalForces/KawaiiPhysicsExternalForce.h"
@@ -15,6 +17,7 @@
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "Engine/World.h"
 #include "PhysicsEngine/PhysicsSettings.h"
+#include "Templates/RemoveReference.h"
 
 #if !UE_VERSION_OLDER_THAN(5, 5, 0)
 #include "PhysicsEngine/SkeletalBodySetup.h"
@@ -31,6 +34,7 @@
 
 #include "KawaiiPhysics.h"
 #include "AnimNode_KawaiiPhysicsInternal.h"
+#include "KawaiiPhysicsNodeWarning.h"
 
 void FAnimNode_KawaiiPhysics::ApplyLimitsDataAsset(const FBoneContainer& RequiredBones)
 {
@@ -137,6 +141,105 @@ void FAnimNode_KawaiiPhysics::ApplyPhysicsAsset(const FBoneContainer& RequiredBo
 		Initialize(CapsuleLimitsData);
 		Initialize(BoxLimitsData);
 	}
+}
+
+void FAnimNode_KawaiiPhysics::ApplyMirrorLimits(const FBoneContainer& RequiredBones)
+{
+	auto RemoveAllSourceMirrors = [](auto& Targets)
+	{
+		Targets.RemoveAll([](const FCollisionLimitBase& Limit)
+		{
+			return Limit.SourceType == ECollisionSourceType::Mirror;
+		});
+	};
+
+	RemoveAllSourceMirrors(SphericalLimitsData);
+	RemoveAllSourceMirrors(CapsuleLimitsData);
+	RemoveAllSourceMirrors(BoxLimitsData);
+	RemoveAllSourceMirrors(PlanarLimitsData);
+
+	if (!MirrorDataTableForLimits)
+	{
+		return;
+	}
+
+	const EAxis::Type MirrorAxis = MirrorDataTableForLimits->MirrorAxis;
+	if (MirrorAxis == EAxis::None)
+	{
+		return;
+	}
+
+	const USkeleton* Skeleton = RequiredBones.GetSkeletonAsset();
+	if (!Skeleton)
+	{
+		KAWAII_LOG_NODE_WARNING_ONCE(bMirrorSkeletonMissingWarned, LogKawaiiPhysics,
+			TEXT("MirrorDataTableForLimits is set, but RequiredBones has no Skeleton. Skip collision mirroring.%s"),
+			TEXT(""));
+		return;
+	}
+
+	TCustomBoneIndexArray<FSkeletonPoseBoneIndex, FSkeletonPoseBoneIndex> MirrorBoneIndexes;
+	MirrorDataTableForLimits->FillMirrorBoneIndexes(Skeleton, MirrorBoneIndexes);
+
+	const FReferenceSkeleton& SkeletonRefSkeleton = Skeleton->GetReferenceSkeleton();
+	const auto ResolveMirrorBoneName = [&SkeletonRefSkeleton, &MirrorBoneIndexes](FName BoneName) -> FName
+	{
+		if (BoneName.IsNone())
+		{
+			return NAME_None;
+		}
+
+		const int32 SkeletonBoneIndex = SkeletonRefSkeleton.FindBoneIndex(BoneName);
+		if (SkeletonBoneIndex == INDEX_NONE || !MirrorBoneIndexes.IsValidIndex(SkeletonBoneIndex))
+		{
+			return NAME_None;
+		}
+
+		const FSkeletonPoseBoneIndex MirroredBoneIndex = MirrorBoneIndexes[FSkeletonPoseBoneIndex(SkeletonBoneIndex)];
+		if (!MirroredBoneIndex.IsValid() || MirroredBoneIndex.GetInt() == SkeletonBoneIndex
+			|| !SkeletonRefSkeleton.IsValidIndex(MirroredBoneIndex.GetInt()))
+		{
+			return NAME_None;
+		}
+
+		return SkeletonRefSkeleton.GetBoneName(MirroredBoneIndex.GetInt());
+	};
+
+	const FReferenceSkeleton& MeshRefSkeleton = RequiredBones.GetReferenceSkeleton();
+	TArray<FQuat> CSRefRotations;
+	KawaiiPhysicsMirror::BuildComponentSpaceRefRotations(MeshRefSkeleton, CSRefRotations);
+
+	const auto FindBoneIndex = [&MeshRefSkeleton](FName BoneName) -> int32
+	{
+		return MeshRefSkeleton.FindBoneIndex(BoneName);
+	};
+
+	auto AppendMirrored = [&RequiredBones, &ResolveMirrorBoneName, &FindBoneIndex, &CSRefRotations, MirrorAxis,
+	                       this](const auto& NodeLimits, auto& MergedLimits)
+	{
+		using TLimit = typename TRemoveReference<decltype(MergedLimits)>::Type::ElementType;
+
+		TArray<TLimit> NewLimits;
+		KawaiiPhysicsMirror::AppendMirroredLimits(NodeLimits, NodeLimits, MergedLimits,
+		                                          bSkipMirroredBoneWithExistingCollision,
+		                                          ResolveMirrorBoneName, FindBoneIndex,
+		                                          CSRefRotations, MirrorAxis, NewLimits);
+		KawaiiPhysicsMirror::AppendMirroredLimits(MergedLimits, NodeLimits, MergedLimits,
+		                                          bSkipMirroredBoneWithExistingCollision,
+		                                          ResolveMirrorBoneName, FindBoneIndex,
+		                                          CSRefRotations, MirrorAxis, NewLimits);
+
+		for (auto& NewLimit : NewLimits)
+		{
+			NewLimit.DrivingBone.Initialize(RequiredBones);
+		}
+		MergedLimits.Append(MoveTemp(NewLimits));
+	};
+
+	AppendMirrored(SphericalLimits, SphericalLimitsData);
+	AppendMirrored(CapsuleLimits, CapsuleLimitsData);
+	AppendMirrored(BoxLimits, BoxLimitsData);
+	AppendMirrored(PlanarLimits, PlanarLimitsData);
 }
 
 void FAnimNode_KawaiiPhysics::ApplyBoneConstraintDataAsset(const FBoneContainer& RequiredBones)

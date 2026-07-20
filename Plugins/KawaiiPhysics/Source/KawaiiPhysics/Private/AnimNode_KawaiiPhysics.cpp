@@ -36,43 +36,9 @@
 
 #include "KawaiiPhysics.h"
 #include "AnimNode_KawaiiPhysicsInternal.h"
+#include "KawaiiPhysicsNodeWarning.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AnimNode_KawaiiPhysics)
-
-// 警告ログ用：ノードを特定するコンテキスト文字列の生成とログ出力マクロ。
-// AnyThreadからUObjectに触れないよう、名前はPreUpdate(GameThread)でキャッシュ済みのものを使う。
-// マクロはメンバを非修飾参照するためメンバ関数内でのみ使用可。ファイル末尾で#undefする。
-#if !UE_BUILD_SHIPPING
-static FString BuildKawaiiNodeContextString(
-	const FName AnimBPName, const FName ComponentName,
-	const FName ActorName, const FName RootBoneName)
-{
-	return FString::Printf(
-		TEXT("AnimBP: %s, Component: %s, Actor: %s, RootBone: %s"),
-		*AnimBPName.ToString(), *ComponentName.ToString(),
-		*ActorName.ToString(), *RootBoneName.ToString());
-}
-
-// ノード特定情報を末尾に付与してWarningを出す（移植性のためFormatの後に最低1つの可変引数が必要）
-#define KAWAII_LOG_NODE_WARNING(CategoryName, Format, ...) \
-	UE_LOG(CategoryName, Warning, Format TEXT(" (%s)"), __VA_ARGS__, \
-		*BuildKawaiiNodeContextString(CachedAnimInstanceClassName, CachedComponentName, \
-			CachedOwnerActorName, RootBone.BoneName))
-
-// ノードごと1回だけWarning（GuardBoolはShipping除外メンバ）
-#define KAWAII_LOG_NODE_WARNING_ONCE(GuardBool, CategoryName, Format, ...) \
-	do { if (!(GuardBool)) { KAWAII_LOG_NODE_WARNING(CategoryName, Format, __VA_ARGS__); (GuardBool) = true; } } while (0)
-
-// 1回ガードのリセット
-#define KAWAII_RESET_NODE_WARNING_ONCE(GuardBool) (GuardBool) = false
-#else
-// Shipping：コンテキストなしの素のログ。GuardBool引数は展開で破棄され、除外メンバを参照しない
-#define KAWAII_LOG_NODE_WARNING(CategoryName, Format, ...) \
-	UE_LOG(CategoryName, Warning, Format, __VA_ARGS__)
-#define KAWAII_LOG_NODE_WARNING_ONCE(GuardBool, CategoryName, Format, ...) \
-	UE_LOG(CategoryName, Warning, Format, __VA_ARGS__)
-#define KAWAII_RESET_NODE_WARNING_ONCE(GuardBool) ((void)0)
-#endif
 
 #if ENABLE_ANIM_DEBUG
 TAutoConsoleVariable<bool> CVarAnimNodeKawaiiPhysicsEnable(
@@ -185,6 +151,7 @@ void FAnimNode_KawaiiPhysics::Initialize_AnyThread(const FAnimationInitializeCon
 
 	ApplyLimitsDataAsset(RequiredBones);
 	ApplyPhysicsAsset(RequiredBones);
+	ApplyMirrorLimits(RequiredBones);
 	ApplyBoneConstraintDataAsset(RequiredBones);
 
 	ModifyBones.Empty();
@@ -371,14 +338,16 @@ void FAnimNode_KawaiiPhysics::EvaluateSkeletalControl_AnyThread(FComponentSpaceP
 		// flagを戻し次フレーム冒頭で現在ポーズから再開させる
 		bSubstepPoseInitialized = false;
 
-		// 再初期化（設定変更）時はSimulationBaseBone無効警告を再通知できるようガードを戻す
+		// 再初期化（設定変更）時はノード警告を再通知できるようガードを戻す
 		KAWAII_RESET_NODE_WARNING_ONCE(bSimBaseBoneInvalidWarned);
+		KAWAII_RESET_NODE_WARNING_ONCE(bMirrorSkeletonMissingWarned);
 	}
 
 #if WITH_EDITOR
 	// 他のNodeでの編集を同期する
 	ApplyLimitsDataAsset(BoneContainer);
 	ApplyPhysicsAsset(BoneContainer);
+	ApplyMirrorLimits(BoneContainer);
 	ApplyBoneConstraintDataAsset(BoneContainer);
 
 	// ライブ編集用（コンパイル前に同期）
@@ -722,7 +691,3 @@ FVector FAnimNode_KawaiiPhysics::GetBoneForwardVector(const FQuat& Rotation) con
 		return -Rotation.GetAxisZ();
 	}
 }
-
-#undef KAWAII_LOG_NODE_WARNING
-#undef KAWAII_LOG_NODE_WARNING_ONCE
-#undef KAWAII_RESET_NODE_WARNING_ONCE

@@ -189,6 +189,8 @@ void UAnimGraphNode_KawaiiPhysics::CopyNodeDataToPreviewNode(FAnimNode_Base* Ani
 	KawaiiPhysics->PlanarLimits = Node.PlanarLimits;
 	KawaiiPhysics->LimitsDataAsset = Node.LimitsDataAsset;
 	KawaiiPhysics->PhysicsAssetForLimits = Node.PhysicsAssetForLimits;
+	KawaiiPhysics->MirrorDataTableForLimits = Node.MirrorDataTableForLimits;
+	KawaiiPhysics->bSkipMirroredBoneWithExistingCollision = Node.bSkipMirroredBoneWithExistingCollision;
 
 	// Shared Collision
 	if (KawaiiPhysics->bSharedCollisionSource != Node.bSharedCollisionSource ||

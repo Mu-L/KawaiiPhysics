@@ -31,6 +31,7 @@
 class UKawaiiPhysics_CustomExternalForce;
 class UKawaiiPhysicsLimitsDataAsset;
 class UKawaiiPhysicsBoneConstraintsDataAsset;
+class UMirrorDataTable;
 
 #if ENABLE_ANIM_DEBUG
 extern KAWAIIPHYSICS_API TAutoConsoleVariable<bool> CVarAnimNodeKawaiiPhysicsEnable;
@@ -331,7 +332,21 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits", meta = (PinHiddenByDefault))
 	TObjectPtr<UPhysicsAsset> PhysicsAssetForLimits = nullptr;
 
-	/** 
+	/**
+	* コリジョンのミラーリング設定。設定すると既存コリジョン（AnimNode直値 / DataAsset / PhysicsAsset）をMirrorDataTableで解決したミラー先ボーンへ自動複製（中央ボーンはスキップ）
+	* Mirroring source for collisions. If set, existing collisions are automatically duplicated onto the mirrored bones resolved via the MirrorDataTable (center bones are skipped).
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Limits", meta = (PinHiddenByDefault))
+	TObjectPtr<UMirrorDataTable> MirrorDataTableForLimits = nullptr;
+
+	/**
+	* ONの場合、ミラー先ボーンに同形状タイプのコリジョン（Mirror由来を除く）が既にあればミラー生成をスキップ
+	* If true, skip generating a mirrored collision when the mirrored bone already has a collision of the same shape type (excluding Mirror-sourced ones).
+	*/
+	UPROPERTY(EditAnywhere, Category = "Limits", meta = (PinHiddenByDefault))
+	bool bSkipMirroredBoneWithExistingCollision = true;
+
+	/**
 	* コリジョン設定（DataAsset版）における球コリジョンのプレビュー
 	* Preview of sphere collision in collision settings (DataAsset version)
 	*/
@@ -689,6 +704,8 @@ private:
 	FName CachedOwnerActorName;
 	// SimulationBaseBone無効警告をノードごと1回だけ出すためのガード / Guard to log the invalid SimulationBaseBone warning once per node
 	bool bSimBaseBoneInvalidWarned = false;
+	// MirrorDataTable用Skeleton欠落警告をノードごと1回だけ出すためのガード / Guard to log the missing Skeleton warning for MirrorDataTable once per node
+	bool bMirrorSkeletonMissingWarned = false;
 #endif
 
 	// --- Shared Collision ---
@@ -986,6 +1003,12 @@ protected:
 	 * @param RequiredBones The bone container containing the required bones.
 	 */
 	void ApplyPhysicsAsset(const FBoneContainer& RequiredBones);
+
+	/**
+	 * MirrorDataTableForLimitsに基づき既存コリジョンをミラー先ボーンへ複製してLimitsDataへ追加。ApplyLimitsDataAsset / ApplyPhysicsAssetの後に呼ぶこと
+	 * Duplicates existing collisions onto mirrored bones and appends them to the merged LimitsData arrays. Must be called after ApplyLimitsDataAsset / ApplyPhysicsAsset.
+	 */
+	void ApplyMirrorLimits(const FBoneContainer& RequiredBones);
 
 	/**
 	 * Applies the bone constraint data asset to BoneConstraints.
