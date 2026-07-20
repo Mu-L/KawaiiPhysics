@@ -305,6 +305,12 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	*/
 	UPROPERTY(EditAnywhere, Category = "Limits")
 	TArray<FCapsuleLimit> CapsuleLimits;
+	/**
+	* コリジョン（テーパードカプセル）
+	* Tapered Capsule Collision
+	*/
+	UPROPERTY(EditAnywhere, Category = "Limits")
+	TArray<FTaperedCapsuleLimit> TaperedCapsuleLimits;
 	/** 
 	* コリジョン（ボックス）
 	* Box Collision
@@ -358,6 +364,12 @@ struct KAWAIIPHYSICS_API FAnimNode_KawaiiPhysics : public FAnimNode_SkeletalCont
 	*/
 	UPROPERTY(Transient, VisibleAnywhere, AdvancedDisplay, Category = "Limits")
 	TArray<FCapsuleLimit> CapsuleLimitsData;
+	/**
+	* コリジョン設定（DataAsset版）におけるテーパードカプセルコリジョンのプレビュー
+	* Preview of tapered capsule collision in collision settings (DataAsset version)
+	*/
+	UPROPERTY(Transient, VisibleAnywhere, AdvancedDisplay, Category = "Limits")
+	TArray<FTaperedCapsuleLimit> TaperedCapsuleLimitsData;
 	/** 
 	* コリジョン設定（DataAsset版）におけるボックスコリジョンのプレビュー
 	* Preview of box collision in collision settings (DataAsset version)
@@ -728,6 +740,7 @@ private:
 	// Shared collision working arrays (converted to simulation space)
 	TArray<FSphericalLimit> SharedSphericalLimits;
 	TArray<FCapsuleLimit> SharedCapsuleLimits;
+	TArray<FTaperedCapsuleLimit> SharedTaperedCapsuleLimits;
 	TArray<FBoxLimit> SharedBoxLimits;
 	TArray<FPlanarLimit> SharedPlanarLimits;
 
@@ -1081,6 +1094,16 @@ protected:
 	void UpdateCapsuleLimits(TArray<FCapsuleLimit>& Limits, FComponentSpacePoseContext& Output,
 	                         const FBoneContainer& BoneContainer, const FTransform& ComponentTransform) const;
 
+	/**
+	 * Updates the tapered capsule limits for the given bones.
+	 *
+	 * @param Limits An array of tapered capsule limits to update.
+	 * @param Output The pose context.
+	 * @param BoneContainer The bone container.
+	 * @param ComponentTransform The component transform.
+	 */
+	void UpdateTaperedCapsuleLimits(TArray<FTaperedCapsuleLimit>& Limits, FComponentSpacePoseContext& Output,
+	                                const FBoneContainer& BoneContainer, const FTransform& ComponentTransform) const;
 
 	/**
 	 * Updates the box limits for the given bones.
@@ -1244,6 +1267,14 @@ protected:
 	void AdjustByCapsuleCollision(FKawaiiPhysicsModifyBone& Bone, TArray<FCapsuleLimit>& Limits);
 
 	/**
+	 * Adjusts the bone position based on tapered capsule collision limits.
+	 *
+	 * @param Bone The bone to adjust.
+	 * @param Limits An array of tapered capsule limits.
+	 */
+	void AdjustByTaperedCapsuleCollision(FKawaiiPhysicsModifyBone& Bone, TArray<FTaperedCapsuleLimit>& Limits);
+
+	/**
 	 * Adjusts the bone position based on box collision limits.
 	 *
 	 * @param Bone The bone to adjust.
@@ -1319,6 +1350,11 @@ protected:
 	void AnimDrawDebugBox(FComponentSpacePoseContext& Output, const FVector& CenterLocationSim,
 	                      const FQuat& RotationSim,
 	                      const FVector& Extent, const FColor& Color, float Thickness) const;
+
+	// Draw debug Tapered Capsule
+	void AnimDrawDebugTaperedCapsule(FComponentSpacePoseContext& Output, const FVector& CenterLocationSim,
+	                                 const FQuat& RotationSim, float Radius0, float Radius1, float Length,
+	                                 const FColor& Color, float Thickness) const;
 #endif
 
 

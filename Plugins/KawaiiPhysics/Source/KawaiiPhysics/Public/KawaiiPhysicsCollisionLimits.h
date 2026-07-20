@@ -19,6 +19,7 @@ enum class ECollisionLimitType : uint8
 	Capsule,
 	Box,
 	Planar,
+	TaperedCapsule,
 };
 
 /**
@@ -168,6 +169,46 @@ struct FCapsuleLimit : public FCollisionLimitBase
 	{
 		FCollisionLimitBase::operator=(Other);
 		Radius = Other.Radius;
+		Length = Other.Length;
+		return *this;
+	}
+};
+
+/**
+ * Structure representing a tapered capsule limit for collision in KawaiiPhysics.
+ */
+USTRUCT(BlueprintType)
+struct FTaperedCapsuleLimit : public FCollisionLimitBase
+{
+	GENERATED_BODY()
+
+	/** Default constructor */
+	FTaperedCapsuleLimit()
+	{
+#if WITH_EDITORONLY_DATA
+		// Set the collision limit type to tapered capsule
+		Type = ECollisionLimitType::TaperedCapsule;
+#endif
+	}
+
+	/** +Z端の半径 / Radius at the +Z end */
+	UPROPERTY(EditAnywhere, Category = TaperedCapsuleLimit, meta = (ClampMin = "0"))
+	float Radius0 = 5.0f;
+
+	/** -Z端の半径 / Radius at the -Z end */
+	UPROPERTY(EditAnywhere, Category = TaperedCapsuleLimit, meta = (ClampMin = "0"))
+	float Radius1 = 5.0f;
+
+	/** カプセルの長さ / Length of the capsule */
+	UPROPERTY(EditAnywhere, Category = TaperedCapsuleLimit, meta = (ClampMin = "0"))
+	float Length = 10.0f;
+
+	/** Assignment operator */
+	FTaperedCapsuleLimit& operator=(const FTaperedCapsuleLimit& Other)
+	{
+		FCollisionLimitBase::operator=(Other);
+		Radius0 = Other.Radius0;
+		Radius1 = Other.Radius1;
 		Length = Other.Length;
 		return *this;
 	}
