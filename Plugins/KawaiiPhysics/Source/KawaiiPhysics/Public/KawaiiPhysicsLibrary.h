@@ -8,6 +8,8 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "KawaiiPhysicsLibrary.generated.h"
 
+class UMirrorDataTable;
+
 UENUM()
 enum class EKawaiiPhysicsAccessExternalForceResult : uint8
 {
@@ -312,6 +314,48 @@ public:
 	static UKawaiiPhysicsLimitsDataAsset* GetLimitsDataAsset(const FKawaiiPhysicsReference& KawaiiPhysics)
 	{
 		KAWAIIPHYSICS_VALUE_GETTER(TObjectPtr<UKawaiiPhysicsLimitsDataAsset>, LimitsDataAsset);
+	}
+
+	/**
+	 * コリジョンのミラーリング設定を設定（反映は次回ノード初期化時）
+	 * Set the collision mirroring source (applied on the next node initialization).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kawaii Physics", meta=(BlueprintThreadSafe))
+	static FKawaiiPhysicsReference SetMirrorDataTableForLimits(const FKawaiiPhysicsReference& KawaiiPhysics,
+	                                                           UMirrorDataTable* MirrorDataTableForLimits)
+	{
+		KAWAIIPHYSICS_VALUE_SETTER(TObjectPtr<UMirrorDataTable>, MirrorDataTableForLimits);
+	}
+
+	/**
+	 * コリジョンのミラーリング設定を取得
+	 * Get the collision mirroring source.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Kawaii Physics", meta=(BlueprintThreadSafe))
+	static UMirrorDataTable* GetMirrorDataTableForLimits(const FKawaiiPhysicsReference& KawaiiPhysics)
+	{
+		KAWAIIPHYSICS_VALUE_GETTER(TObjectPtr<UMirrorDataTable>, MirrorDataTableForLimits);
+	}
+
+	/**
+	 * ミラー先ボーンに同形状コリジョンがある場合にミラー生成をスキップするかを設定（反映は次回ノード初期化時）
+	 * Set whether to skip mirrored collision generation when the mirrored bone already has a collision of the same shape type (applied on the next node initialization).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kawaii Physics", meta=(BlueprintThreadSafe))
+	static FKawaiiPhysicsReference SetSkipMirroredBoneWithExistingCollision(
+		const FKawaiiPhysicsReference& KawaiiPhysics, bool bSkipMirroredBoneWithExistingCollision)
+	{
+		KAWAIIPHYSICS_VALUE_SETTER(bool, bSkipMirroredBoneWithExistingCollision);
+	}
+
+	/**
+	 * ミラー先ボーンに同形状コリジョンがある場合にミラー生成をスキップするかを取得
+	 * Get whether mirrored collision generation is skipped when the mirrored bone already has a collision of the same shape type.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Kawaii Physics", meta=(BlueprintThreadSafe))
+	static bool GetSkipMirroredBoneWithExistingCollision(const FKawaiiPhysicsReference& KawaiiPhysics)
+	{
+		KAWAIIPHYSICS_VALUE_GETTER(bool, bSkipMirroredBoneWithExistingCollision);
 	}
 
 	/** Add ExternalForce With ExecResult */
