@@ -91,6 +91,10 @@ public:
 	UPROPERTY()
 	bool bEnableDebugDrawCapsuleLimit = true;
 
+	/** テーパードカプセルリミットのデバッグ描画を有効/無効にします / Enables or disables debug drawing for tapered capsule limits. */
+	UPROPERTY()
+	bool bEnableDebugDrawTaperedCapsuleLimit = true;
+
 	/** Enables or disables debug drawing for box limits. */
 	UPROPERTY()
 	bool bEnableDebugDrawBoxLimit = true;

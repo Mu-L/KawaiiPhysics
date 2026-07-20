@@ -101,6 +101,7 @@ void UAnimGraphNode_KawaiiPhysics::EnsureUniqueCollisionGuids()
 	};
 	Dedup(Node.SphericalLimits);
 	Dedup(Node.CapsuleLimits);
+	Dedup(Node.TaperedCapsuleLimits);
 	Dedup(Node.BoxLimits);
 	Dedup(Node.PlanarLimits);
 }
@@ -185,6 +186,7 @@ void UAnimGraphNode_KawaiiPhysics::CopyNodeDataToPreviewNode(FAnimNode_Base* Ani
 	// Limits
 	KawaiiPhysics->SphericalLimits = Node.SphericalLimits;
 	KawaiiPhysics->CapsuleLimits = Node.CapsuleLimits;
+	KawaiiPhysics->TaperedCapsuleLimits = Node.TaperedCapsuleLimits;
 	KawaiiPhysics->BoxLimits = Node.BoxLimits;
 	KawaiiPhysics->PlanarLimits = Node.PlanarLimits;
 	KawaiiPhysics->LimitsDataAsset = Node.LimitsDataAsset;
@@ -395,6 +397,10 @@ void UAnimGraphNode_KawaiiPhysics::CustomizeDetailDebugVisualizations(IDetailLay
 			[
 				CreateDebugButton(TEXT("Plane"),  bEnableDebugDrawPlanerLimit)
 			]
+			+ SUniformGridPanel::Slot(1, 1)
+			[
+				CreateDebugButton(TEXT("Tapered Capsule"),  bEnableDebugDrawTaperedCapsuleLimit)
+			]
 		]
 
 		// Advanced
@@ -588,6 +594,7 @@ void UAnimGraphNode_KawaiiPhysics::ExportLimitsDataAsset()
 		};
 		CopyLimits(NewDataAsset->SphericalLimits, Node.SphericalLimits);
 		CopyLimits(NewDataAsset->CapsuleLimits, Node.CapsuleLimits);
+		CopyLimits(NewDataAsset->TaperedCapsuleLimits, Node.TaperedCapsuleLimits);
 		CopyLimits(NewDataAsset->BoxLimits, Node.BoxLimits);
 		CopyLimits(NewDataAsset->PlanarLimits, Node.PlanarLimits);
 
